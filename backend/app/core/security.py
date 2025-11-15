@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from functools import wraps
 from fastapi import HTTPException, status, Depends, Request
+from bson import ObjectId
 
 from app.core.auth import get_current_user
 from app.core.database import get_database
@@ -88,6 +89,49 @@ class InputSanitizer:
             raise SecurityError("Invalid filename")
         
         return filename
+    
+    @classmethod
+    def validate_object_id(cls, object_id: str) -> str:
+        """Validate MongoDB ObjectId format."""
+        if not object_id:
+            raise SecurityError("Object ID cannot be empty")
+        
+        # Check if it's a valid ObjectId format (24 hex characters)
+        if not re.match(r'^[0-9a-fA-F]{24}$', object_id):
+            raise SecurityError("Invalid Object ID format")
+        
+        return object_id
+    
+    @classmethod
+    def sanitize_json(cls, data: dict, max_depth: int = 10) -> dict:
+        """Recursively sanitize JSON data."""
+        if max_depth <= 0:
+            raise SecurityError("Maximum recursion depth exceeded")
+        
+        sanitized = {}
+        for key, value in data.items():
+            # Sanitize key
+            sanitized_key = cls.sanitize_string(str(key), max_length=100)
+            
+            # Sanitize value based on type
+            if isinstance(value, str):
+                sanitized[sanitized_key] = cls.sanitize_string(value)
+            elif isinstance(value, dict):
+                sanitized[sanitized_key] = cls.sanitize_json(value, max_depth - 1)
+            elif isinstance(value, list):
+                sanitized[sanitized_key] = [
+                    cls.sanitize_string(item) if isinstance(item, str) else item
+                    for item in value[:100]  # Limit list size
+                ]
+            else:
+                sanitized[sanitized_key] = value
+        
+        return sanitized
+    
+    @classmethod
+    def sanitize_dict(cls, data: dict, max_depth: int = 10) -> dict:
+        """Alias for sanitize_json for clarity."""
+        return cls.sanitize_json(data, max_depth)
 
 class AuditLogger:
     """Utility class for audit logging."""
@@ -251,3 +295,68 @@ class CompanyIsolation:
         
         # Students can only see their own data
         return {"candidate_id": user_id}
+
+class StudentDataIsolation:
+    """Ensure data isolation for students - they can only access their own data."""
+    
+    @staticmethod
+    def check_student_resource_access(
+        current_user: dict,
+        resource_student_id: str
+    ) -> bool:
+        """Check if student can access a resource."""
+        user_id = str(current_user.get("_id", ""))
+        user_role = current_user.get("role")
+        
+        # Admin can access everything
+        if user_role == UserRole.ADMIN:
+            return True
+        
+        # Students can only access their own resources
+        if user_role == UserRole.STUDENT:
+            return user_id == resource_student_id
+        
+        return False
+    
+    @staticmethod
+    def get_student_isolation_filter(current_user: dict) -> Dict[str, Any]:
+        """Get filter for student data isolation."""
+        user_role = current_user.get("role")
+        user_id = current_user.get("_id")
+        
+        if user_role == UserRole.ADMIN:
+            return {}  # Admin sees everything
+        
+        if user_role == UserRole.STUDENT:
+            # Students can only see their own data
+            return {"candidate_id": ObjectId(user_id) if isinstance(user_id, str) else user_id}
+        
+        # Recruiters don't have access to student-specific endpoints
+        return {"_id": None}  # Return empty result
+    
+    @staticmethod
+    def ensure_student_owns_resource(
+        current_user: dict,
+        resource: dict,
+        resource_id_field: str = "candidate_id"
+    ) -> None:
+        """Ensure the student owns the resource, raise exception if not."""
+        user_id = str(current_user.get("_id", ""))
+        user_role = current_user.get("role")
+        
+        # Admin bypass
+        if user_role == UserRole.ADMIN:
+            return
+        
+        # Check ownership
+        resource_owner_id = str(resource.get(resource_id_field, ""))
+        if user_id != resource_owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. You can only access your own resources."
+            )
+
+# Dependency functions for student access control
+def require_student():
+    """Dependency to require student role."""
+    return RoleChecker([UserRole.STUDENT, UserRole.ADMIN])

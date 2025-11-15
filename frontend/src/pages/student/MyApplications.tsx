@@ -1,10 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useApplications } from '../../hooks/student/useApplications';
 import { useJobs } from '../../hooks/student/useJobs';
+import { useWebSocket, ApplicationStatusUpdate } from '../../context/WebSocketContext';
 import ApplicationStatusCard from '../../components/ApplicationStatusCard';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorMessage from '../../components/ErrorMessage';
+import ConnectionStatusIndicator from '../../components/ConnectionStatusIndicator';
+import { ApplicationsPageSkeleton } from '../../components/student/StudentPageSkeletons';
 
 type ViewMode = 'kanban' | 'table';
 type FilterStatus = 'all' | 'enrolled' | 'in_progress' | 'submitted' | 'evaluated' | 'reviewed' | 'shortlisted' | 'rejected';
@@ -21,15 +25,53 @@ const MyApplications: React.FC = () => {
   // Fetch applications and jobs data
   const { data: applicationsData, isLoading: applicationsLoading, error: applicationsError, refetch: refetchApplications } = useApplications();
   const { data: jobsData, isLoading: jobsLoading } = useJobs();
+  const queryClient = useQueryClient();
+  const { setOnApplicationStatusUpdate, isConnected } = useWebSocket();
 
-  // Auto-refresh applications every 30 seconds for real-time updates
+  // Set up real-time application status update handler
   useEffect(() => {
+    setOnApplicationStatusUpdate((update: ApplicationStatusUpdate) => {
+      // Optimistically update the application in the cache
+      queryClient.setQueryData(['applications'], (oldData: any) => {
+        if (!oldData?.applications) return oldData;
+        
+        const updatedApplications = oldData.applications.map((app: any) => {
+          if (app._id === update.application_id) {
+            return {
+              ...app,
+              status: update.status,
+              ...(update.ai_evaluation && { ai_evaluation: update.ai_evaluation }),
+              ...(update.recruiter_review && { recruiter_review: update.recruiter_review }),
+            };
+          }
+          return app;
+        });
+        
+        return {
+          ...oldData,
+          applications: updatedApplications,
+        };
+      });
+      
+      // Also invalidate to ensure fresh data
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    });
+
+    return () => {
+      setOnApplicationStatusUpdate(undefined);
+    };
+  }, [setOnApplicationStatusUpdate, queryClient]);
+
+  // Auto-refresh applications every 30 seconds as fallback (only if not connected)
+  useEffect(() => {
+    if (isConnected) return; // Skip polling if WebSocket is connected
+    
     const interval = setInterval(() => {
       refetchApplications();
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [refetchApplications]);
+  }, [refetchApplications, isConnected]);
 
   // Create a map of jobs for quick lookup
   const jobsMap = useMemo(() => {
@@ -131,14 +173,7 @@ const MyApplications: React.FC = () => {
   };
 
   if (applicationsLoading || jobsLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-gray-600">Loading your applications...</p>
-        </div>
-      </div>
-    );
+    return <ApplicationsPageSkeleton />;
   }
 
   if (applicationsError) {
@@ -161,7 +196,10 @@ const MyApplications: React.FC = () => {
           <div className="py-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">My Applications</h1>
+                <div className="flex items-center space-x-3">
+                  <h1 className="text-3xl font-bold text-gray-900">My Applications</h1>
+                  <ConnectionStatusIndicator showLabel={true} />
+                </div>
                 <p className="mt-2 text-gray-600">
                   Track your job applications and submission progress
                 </p>

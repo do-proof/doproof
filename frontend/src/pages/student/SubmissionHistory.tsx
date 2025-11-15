@@ -6,6 +6,7 @@ import SubmissionViewer from '../../components/student/SubmissionViewer';
 import SubmissionComparison from '../../components/student/SubmissionComparison';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorMessage from '../../components/ErrorMessage';
+import { SubmissionHistoryPageSkeleton } from '../../components/student/StudentPageSkeletons';
 import { TaskSubmission } from '../../hooks/student/useTaskSubmissions';
 
 interface SubmissionFilters {
@@ -195,11 +196,7 @@ const SubmissionHistory: React.FC = () => {
   const performanceTrend = calculatePerformanceTrend();
 
   if (submissionsLoading || jobsLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <LoadingSpinner />
-      </div>
-    );
+    return <SubmissionHistoryPageSkeleton />;
   }
 
   if (submissionsError) {

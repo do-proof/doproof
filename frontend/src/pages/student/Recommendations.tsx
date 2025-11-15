@@ -3,6 +3,7 @@ import { useRecommendations, useRecommendationReasoning } from '../../hooks/stud
 import RecommendationEngine from '../../components/student/RecommendationEngine';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorMessage from '../../components/ErrorMessage';
+import { RecommendationsPageSkeleton } from '../../components/student/StudentPageSkeletons';
 
 const Recommendations: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -23,14 +24,7 @@ const Recommendations: React.FC = () => {
   } = useRecommendationReasoning();
 
   if (recommendationsLoading && !recommendationsData) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-gray-600">Loading your personalized recommendations...</p>
-        </div>
-      </div>
-    );
+    return <RecommendationsPageSkeleton />;
   }
 
   if (recommendationsError) {

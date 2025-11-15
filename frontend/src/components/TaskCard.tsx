@@ -124,27 +124,33 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
   const primaryAction = getPrimaryAction();
 
+  const cardId = `task-card-${job._id}`;
+  
   return (
-    <div 
+    <article 
+      id={cardId}
       className={`
-        relative bg-white border border-gray-200 rounded-lg p-6 
-        transition-all duration-300 cursor-pointer
+        relative bg-white border border-gray-200 rounded-lg p-4 sm:p-6 
+        transition-all duration-300
         ${isHovered ? 'shadow-xl -translate-y-1 border-blue-300' : 'shadow-md hover:shadow-lg'}
         ${hasApplied ? 'ring-2 ring-blue-100' : ''}
         ${className}
       `}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={() => onViewDetails(job)}
+      role="article"
+      aria-labelledby={`${cardId}-title`}
+      aria-describedby={`${cardId}-description`}
     >
       {/* Header */}
-      <div className="flex justify-between items-start mb-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-4 gap-2">
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-gray-900 truncate">
+          <h3 id={`${cardId}-title`} className="text-base sm:text-lg font-semibold text-gray-900 truncate">
             {job.title}
           </h3>
-          <p className="text-sm text-gray-600 mt-1">
-            Company • {job.location.type === 'remote' ? 'Remote' : `${job.location.city}, ${job.location.country}`}
+          <p className="text-xs sm:text-sm text-gray-600 mt-1" aria-label="Job location">
+            <span className="sr-only">Company location: </span>
+            {job.location.type === 'remote' ? 'Remote' : `${job.location.city}, ${job.location.country}`}
           </p>
         </div>
         
@@ -173,7 +179,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
       </div>
 
       {/* Description */}
-      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+      <p id={`${cardId}-description`} className="text-gray-600 text-sm mb-4 line-clamp-2">
         {job.description}
       </p>
 
@@ -222,24 +228,46 @@ const TaskCard: React.FC<TaskCardProps> = ({
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-        <div className="flex items-center space-x-4 text-sm text-gray-500">
-          <div className="flex items-center space-x-1">
-            <span>📅</span>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-gray-100 gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-500">
+          <div className="flex items-center space-x-1" aria-label={`Deadline: ${deadlineStatus.text}`}>
+            <span aria-hidden="true">📅</span>
             <span className={deadlineStatus.color}>
               {deadlineStatus.text}
             </span>
           </div>
-          <div className="flex items-center space-x-1">
-            <span>🎯</span>
+          <div className="flex items-center space-x-1" aria-label={`Reward points: ${rewardPoints}`}>
+            <span aria-hidden="true">🎯</span>
             <span>{rewardPoints} pts</span>
           </div>
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(difficulty)}`}>
+          <span 
+            className={`px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(difficulty)}`}
+            aria-label={`Difficulty: ${difficulty}`}
+          >
             {difficulty}
           </span>
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* Primary Action Button */}
+          <button
+            onClick={() => onViewDetails(job)}
+            className={`
+              flex-1 sm:flex-initial px-4 py-2 sm:px-6 sm:py-2.5
+              text-sm font-medium rounded-lg
+              min-h-[44px] min-w-[44px]
+              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+              ${primaryAction.disabled 
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+              }
+            `}
+            disabled={primaryAction.disabled}
+            aria-label={`${primaryAction.text} for ${job.title}`}
+          >
+            {primaryAction.text}
+          </button>
+          
           {/* Secondary Action - Enroll (if not applied and not expired) */}
           {!hasApplied && deadlineStatus.status !== 'expired' && (
             <button
@@ -247,29 +275,13 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 e.stopPropagation();
                 setShowEnrollmentModal(true);
               }}
-              className="px-3 py-1 text-sm border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+              className="min-h-[44px] min-w-[44px] px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg border border-blue-600 hover:bg-blue-50 transition-colors"
+              aria-label={`Enroll in ${job.title}`}
             >
-              Enroll
+              <span className="sr-only sm:not-sr-only">Enroll</span>
+              <span className="sm:sr-only" aria-hidden="true">+</span>
             </button>
           )}
-          
-          {/* Primary Action */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              primaryAction.onClick();
-            }}
-            disabled={primaryAction.disabled}
-            className={`
-              px-4 py-2 text-sm font-medium rounded-lg transition-colors
-              ${primaryAction.disabled 
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-              }
-            `}
-          >
-            {primaryAction.text}
-          </button>
         </div>
       </div>
 

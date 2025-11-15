@@ -46,10 +46,10 @@ interface WebSocketContextType {
   lastMessage: WebSocketMessage | null;
   sendMessage: (message: any) => void;
   markNotificationAsRead: (notificationId: string) => void;
-  // Event handlers
-  onApplicationStatusUpdate?: (update: ApplicationStatusUpdate) => void;
-  onTimeTrackingUpdate?: (update: TimeTrackingUpdate) => void;
-  onRealtimeNotification?: (notification: RealtimeNotification) => void;
+  // Event handler setters
+  setOnApplicationStatusUpdate: (handler: ((update: ApplicationStatusUpdate) => void) | undefined) => void;
+  setOnTimeTrackingUpdate: (handler: ((update: TimeTrackingUpdate) => void) | undefined) => void;
+  setOnRealtimeNotification: (handler: ((notification: RealtimeNotification) => void) | undefined) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -82,10 +82,23 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   const reconnectDelay = 3000; // 3 seconds
   const pingInterval = 30000; // 30 seconds
 
-  // Event handlers that can be set by components
-  const [onApplicationStatusUpdate, setOnApplicationStatusUpdate] = useState<((update: ApplicationStatusUpdate) => void) | undefined>();
-  const [onTimeTrackingUpdate, setOnTimeTrackingUpdate] = useState<((update: TimeTrackingUpdate) => void) | undefined>();
-  const [onRealtimeNotification, setOnRealtimeNotification] = useState<((notification: RealtimeNotification) => void) | undefined>();
+  // Event handlers that can be set by components - using refs to avoid stale closures
+  const onApplicationStatusUpdateRef = useRef<((update: ApplicationStatusUpdate) => void) | undefined>();
+  const onTimeTrackingUpdateRef = useRef<((update: TimeTrackingUpdate) => void) | undefined>();
+  const onRealtimeNotificationRef = useRef<((notification: RealtimeNotification) => void) | undefined>();
+  
+  // Expose setters for handlers
+  const setOnApplicationStatusUpdate = useCallback((handler: ((update: ApplicationStatusUpdate) => void) | undefined) => {
+    onApplicationStatusUpdateRef.current = handler;
+  }, []);
+  
+  const setOnTimeTrackingUpdate = useCallback((handler: ((update: TimeTrackingUpdate) => void) | undefined) => {
+    onTimeTrackingUpdateRef.current = handler;
+  }, []);
+  
+  const setOnRealtimeNotification = useCallback((handler: ((notification: RealtimeNotification) => void) | undefined) => {
+    onRealtimeNotificationRef.current = handler;
+  }, []);
 
   const connect = useCallback(() => {
     if (!user?._id || wsRef.current?.readyState === WebSocket.CONNECTING || wsRef.current?.readyState === WebSocket.OPEN) {
@@ -148,21 +161,21 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
                 }
                 
                 // Call custom handler if set
-                if (onRealtimeNotification) {
-                  onRealtimeNotification(notification);
+                if (onRealtimeNotificationRef.current) {
+                  onRealtimeNotificationRef.current(notification);
                 }
               }
               break;
               
             case 'application_status_update':
-              if (message.data && onApplicationStatusUpdate) {
-                onApplicationStatusUpdate(message.data as ApplicationStatusUpdate);
+              if (message.data && onApplicationStatusUpdateRef.current) {
+                onApplicationStatusUpdateRef.current(message.data as ApplicationStatusUpdate);
               }
               break;
               
             case 'time_tracking_update':
-              if (message.data && onTimeTrackingUpdate) {
-                onTimeTrackingUpdate(message.data as TimeTrackingUpdate);
+              if (message.data && onTimeTrackingUpdateRef.current) {
+                onTimeTrackingUpdateRef.current(message.data as TimeTrackingUpdate);
               }
               break;
               
@@ -201,4 +214,85 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
           }, reconnectDelay * reconnectAttemptsRef.current); // Exponential backoff
-        } else if (reconnectAttemptsRef.current >= maxReconnec
+        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          setConnectionStatus('error');
+        }
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('error');
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      setConnectionStatus('error');
+    }
+  }, [user?._id, showInfo, showSuccess, showError]);
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    
+    if (wsRef.current) {
+      wsRef.current.close(1000, 'Manual disconnect');
+      wsRef.current = null;
+    }
+    
+    setIsConnected(false);
+    setConnectionStatus('disconnected');
+    reconnectAttemptsRef.current = 0;
+  }, []);
+
+  const sendMessage = useCallback((message: any) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }, []);
+
+  const markNotificationAsRead = useCallback((notificationId: string) => {
+    return sendMessage({
+      type: 'mark_read',
+      notification_id: notificationId
+    });
+  }, [sendMessage]);
+
+  // Connect when user is available
+  useEffect(() => {
+    if (user?._id) {
+      connect();
+    } else {
+      disconnect();
+    }
+    
+    return () => {
+      disconnect();
+    };
+  }, [user?._id, connect, disconnect]);
+
+  // Expose setters for event handlers
+  const value: WebSocketContextType = {
+    isConnected,
+    connectionStatus,
+    lastMessage,
+    sendMessage,
+    markNotificationAsRead,
+    setOnApplicationStatusUpdate,
+    setOnTimeTrackingUpdate,
+    setOnRealtimeNotification,
+  };
+
+  return (
+    <WebSocketContext.Provider value={value}>
+      {children}
+    </WebSocketContext.Provider>
+  );
+};

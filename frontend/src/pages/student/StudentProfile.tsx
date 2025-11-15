@@ -9,6 +9,7 @@ import { NotificationPreferencesForm } from '../../components/student/ProfileFor
 import { PrivacySettingsForm } from '../../components/student/ProfileForm';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorMessage from '../../components/ErrorMessage';
+import { ProfilePageSkeleton } from '../../components/student/StudentPageSkeletons';
 
 const StudentProfile: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'personal' | 'skills' | 'experience' | 'preferences' | 'portfolio' | 'notifications' | 'privacy'>('personal');
@@ -29,14 +30,7 @@ const StudentProfile: React.FC = () => {
   const profileUpdater = useUpdateProfileSection();
 
   if (profileLoading && !profile) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-gray-600">Loading your profile...</p>
-        </div>
-      </div>
-    );
+    return <ProfilePageSkeleton />;
   }
 
   if (profileError) {

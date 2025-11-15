@@ -45,6 +45,19 @@ class ApiClient {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  private async checkNetworkStatus(): Promise<boolean> {
+    try {
+      const response = await fetch('/api/health', {
+        method: 'HEAD',
+        cache: 'no-cache',
+        signal: AbortSignal.timeout(3000)
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   private parseError(error: any, status: number): ApiError {
     // Handle different error response formats
     if (error?.detail) {

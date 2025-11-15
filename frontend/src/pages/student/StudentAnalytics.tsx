@@ -10,6 +10,7 @@ import {
 } from '../../components/student/PerformanceChart';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ErrorMessage from '../../components/ErrorMessage';
+import { AnalyticsPageSkeleton } from '../../components/student/StudentPageSkeletons';
 
 const StudentAnalytics: React.FC = () => {
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'quarter' | 'year'>('month');

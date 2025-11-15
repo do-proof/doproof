@@ -8,8 +8,10 @@ import {
   useSubmissionByJob 
 } from '../hooks/student/useTaskSubmissions';
 import { useApplicationByJob, useUpdateApplicationProgress } from '../hooks/student/useApplications';
+import { useWebSocket, TimeTrackingUpdate } from '../context/WebSocketContext';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage, { ValidationErrorMessage } from './ErrorMessage';
+import ConnectionStatusIndicator from './ConnectionStatusIndicator';
 
 interface TaskSubmissionFormProps {
   job: Job | JobWithRecommendation;
@@ -35,6 +37,9 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
   const updateSubmissionMutation = useUpdateTaskSubmission();
   const uploadFileMutation = useUploadSubmissionFile();
   const updateProgressMutation = useUpdateApplicationProgress();
+  
+  // WebSocket for real-time time tracking
+  const { setOnTimeTrackingUpdate, isConnected } = useWebSocket();
 
   // Form state based on submission format
   const [formData, setFormData] = useState(() => {
@@ -109,6 +114,20 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
     }
   }, [existingSubmission]);
 
+  // Set up real-time time tracking update handler
+  useEffect(() => {
+    setOnTimeTrackingUpdate((update: TimeTrackingUpdate) => {
+      // Only update if this is for the current submission
+      if ((existingSubmission as any)?._id === update.submission_id) {
+        setTimeSpent(update.time_spent);
+      }
+    });
+
+    return () => {
+      setOnTimeTrackingUpdate(undefined);
+    };
+  }, [setOnTimeTrackingUpdate, existingSubmission]);
+
   // Time tracking effect
   useEffect(() => {
     if ((existingSubmission as any)?.status === 'submitted') {
@@ -117,16 +136,20 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
     }
 
     intervalRef.current = setInterval(() => {
-      setTimeSpent(prev => prev + 1);
-      
-      // Auto-save progress every 5 minutes
-      if (timeSpent > 0 && timeSpent % 5 === 0 && application && isDirty) {
-        updateProgressMutation.mutate({
-          applicationId: (application as any)?._id,
-          timeSpent: timeSpent,
-          completionPercentage: calculateCompletionPercentage()
-        });
-      }
+      setTimeSpent(prev => {
+        const newTime = prev + 1;
+        
+        // Auto-save progress every 5 minutes
+        if (newTime > 0 && newTime % 5 === 0 && application && isDirty) {
+          updateProgressMutation.mutate({
+            applicationId: (application as any)?._id,
+            timeSpent: newTime,
+            completionPercentage: calculateCompletionPercentage()
+          });
+        }
+        
+        return newTime;
+      });
     }, 60000); // Update every minute
 
     return () => {
@@ -134,7 +157,7 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
         clearInterval(intervalRef.current);
       }
     };
-  }, [application, timeSpent, updateProgressMutation, isDirty, existingSubmission]);
+  }, [application, timeSpent, updateProgressMutation, isDirty, existingSubmission, calculateCompletionPercentage]);
 
   // Auto-save effect
   useEffect(() => {
@@ -503,10 +526,15 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
         <div className="p-6 border-b border-gray-200">
           <div className="flex justify-between items-start">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">
-                {isSubmitted ? 'View Submission' : 'Submit Your Work'}
-              </h2>
-              <p className="text-gray-600 mt-1">{job.title} - Company ID: {job.company_id}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    {isSubmitted ? 'View Submission' : 'Submit Your Work'}
+                  </h2>
+                  <p className="text-gray-600 mt-1">{job.title} - Company ID: {job.company_id}</p>
+                </div>
+                <ConnectionStatusIndicator showLabel={true} />
+              </div>
               {autoSaveStatus && (
                 <div className="flex items-center mt-2 text-sm">
                   {autoSaveStatus === 'saving' && (

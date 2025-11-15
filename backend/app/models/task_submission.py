@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum, ForeignKey, JSON, Text
+from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum, ForeignKey, JSON, Text, Index
 from app.models.common import BaseModel
 
 class SubmissionStatus(str, Enum):
@@ -21,9 +21,9 @@ class SubmissionType(str, Enum):
 class TaskSubmissionModel(BaseModel):
     __tablename__ = "task_submissions"
     
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
-    candidate_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    status = Column(SQLEnum(SubmissionStatus), default=SubmissionStatus.IN_PROGRESS, nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    candidate_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(SQLEnum(SubmissionStatus), default=SubmissionStatus.IN_PROGRESS, nullable=False, index=True)
     
     # Timing
     started_at = Column(DateTime, default=datetime.now)
@@ -42,3 +42,11 @@ class TaskSubmissionModel(BaseModel):
     # Basic application info
     cover_letter = Column(Text, nullable=True)
     resume_url = Column(String, nullable=True)
+    
+    # Indexes for student-specific queries
+    __table_args__ = (
+        Index('idx_submission_candidate_status', 'candidate_id', 'status'),  # For student's applications by status
+        Index('idx_submission_job_candidate', 'job_id', 'candidate_id'),  # For checking if student already applied
+        Index('idx_submission_started_at', 'candidate_id', 'started_at'),  # For sorting student submissions by date
+        Index('idx_submission_status_submitted', 'status', 'submitted_at'),  # For filtering evaluated submissions
+    )

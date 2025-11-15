@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum, ForeignKey, JSON, Text
+from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum, ForeignKey, JSON, Text, Index
 from app.models.common import BaseModel
 
 class JobStatus(str, Enum):
@@ -58,5 +58,13 @@ class JobModel(BaseModel):
     view_count = Column(Integer, default=0)
     
     # References
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
-    recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Indexes for student-specific queries
+    __table_args__ = (
+        Index('idx_job_status_posted', 'status', 'posted_date'),  # For active job listings sorted by date
+        Index('idx_job_employment_type', 'employment_type'),  # For filtering by employment type
+        Index('idx_job_company_status', 'company_id', 'status'),  # For company-specific active jobs
+        Index('idx_job_closing_date', 'closing_date'),  # For deadline-based queries
+    )

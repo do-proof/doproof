@@ -4,6 +4,8 @@ from app.routers import users, tasks, jobs, students, notifications, websocket
 from app.core.config import settings
 from app.core.database import connect_to_database, close_database_connection
 from app.middleware.security import SecurityMiddleware, RequestValidationMiddleware
+from app.middleware.rate_limiting import StudentRateLimitMiddleware
+from app.middleware.csrf import CSRFProtectionMiddleware
 
 app = FastAPI(
     title="DoProof API",
@@ -20,9 +22,10 @@ async def shutdown_event():
     await close_database_connection()
 
 # Add security middleware (order matters - add from innermost to outermost)
-# Temporarily disabled for debugging
-# app.add_middleware(RequestValidationMiddleware)
-# app.add_middleware(SecurityMiddleware)
+app.add_middleware(RequestValidationMiddleware)
+app.add_middleware(CSRFProtectionMiddleware)
+app.add_middleware(StudentRateLimitMiddleware)
+app.add_middleware(SecurityMiddleware)
 
 # Configure CORS
 app.add_middleware(

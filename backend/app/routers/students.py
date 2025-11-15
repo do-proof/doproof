@@ -7,7 +7,8 @@ import math
 from app.core.auth import get_current_user, require_any_authenticated
 from app.core.database import get_database
 from app.core.security import (
-    InputSanitizer, AuditLogger, audit_action, get_client_ip, SecurityError
+    InputSanitizer, AuditLogger, audit_action, get_client_ip, SecurityError,
+    require_student, StudentDataIsolation
 )
 from app.models.task_submission import SubmissionStatus
 from app.models.user import UserRole
@@ -27,14 +28,25 @@ async def enroll_in_job(
     request: Request,
     job_id: str = Path(..., description="Job ID to enroll in"),
     enrollment_data: EnrollmentRequest = Body(...),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Enroll a student in a job task."""
     db = get_database()
+    ip_address = await get_client_ip(request)
     
-    # Only students can enroll
+    # Only students can enroll (already checked by require_student)
     if current_user.get("role") != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can enroll in jobs")
+    
+    # Log enrollment attempt
+    AuditLogger.log_action(
+        user_id=str(current_user["_id"]),
+        action="STUDENT_ENROLL_ATTEMPT",
+        resource_type="application",
+        resource_id=job_id,
+        details={"job_id": job_id},
+        ip_address=ip_address
+    )
     
     # Validate and sanitize job ID
     try:
@@ -79,10 +91,16 @@ async def enroll_in_job(
             "time_spent": 0,
         }
         
-        # Add optional fields if provided
+        # Add optional fields if provided - sanitize all input
         if enrollment_data.cover_letter:
             submission_dict["cover_letter"] = InputSanitizer.sanitize_string(
                 enrollment_data.cover_letter, max_length=2000
+            )
+        
+        # Sanitize any other string fields
+        if hasattr(enrollment_data, 'notes') and enrollment_data.notes:
+            submission_dict["notes"] = InputSanitizer.sanitize_string(
+                enrollment_data.notes, max_length=1000
             )
         
         if enrollment_data.expected_completion_time:
@@ -157,14 +175,17 @@ async def get_student_applications(
     has_recruiter_review: Optional[bool] = Query(None, description="Filter by recruiter review presence"),
     min_score: Optional[float] = Query(None, ge=0, le=100, description="Minimum AI score"),
     max_score: Optional[float] = Query(None, ge=0, le=100, description="Maximum AI score"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get all applications for the current student."""
     db = get_database()
     
-    # Only students can access their applications
+    # Ensure student role (already checked by require_student, but double-check for safety)
     if current_user.get("role") != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can access applications")
+    
+    # Apply data isolation - students can only see their own applications
+    isolation_filter = StudentDataIsolation.get_student_isolation_filter(current_user)
     
     # Build filter query
     filter_query = {"candidate_id": ObjectId(current_user["_id"])}
@@ -289,7 +310,7 @@ async def get_student_applications(
 
 @router.get("/applications/summary", response_model=StudentApplicationSummary)
 async def get_application_summary(
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get summary statistics for student's applications."""
     db = get_database()
@@ -303,7 +324,7 @@ async def get_application_summary(
 @router.get("/applications/recent", response_model=List[StudentApplicationResponse])
 async def get_recent_applications(
     limit: int = Query(5, ge=1, le=20, description="Number of recent applications to return"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get recent applications for the student."""
     db = get_database()
@@ -365,7 +386,7 @@ async def get_recent_applications(
 @router.get("/applications/by-job/{job_id}")
 async def get_application_by_job(
     job_id: str = Path(..., description="Job ID"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get student's application for a specific job."""
     db = get_database()
@@ -427,7 +448,7 @@ async def get_application_by_job(
 async def update_application_progress(
     application_id: str = Path(..., description="Application ID"),
     progress_update: ApplicationProgressUpdate = Body(...),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Update progress for a student's application."""
     db = get_database()
@@ -499,12 +520,15 @@ async def update_application_progress(
     return formatted_app
 
 @router.delete("/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+@audit_action("STUDENT_APPLICATION_WITHDRAW", "application")
 async def withdraw_application(
+    request: Request,
     application_id: str = Path(..., description="Application ID"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Withdraw/cancel a student's application."""
     db = get_database()
+    ip_address = await get_client_ip(request)
     
     if current_user.get("role") != UserRole.STUDENT:
         raise HTTPException(status_code=403, detail="Only students can withdraw their applications")
@@ -523,6 +547,13 @@ async def withdraw_application(
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
     
+    # Verify ownership using data isolation
+    StudentDataIsolation.ensure_student_owns_resource(
+        current_user,
+        application,
+        resource_id_field="candidate_id"
+    )
+    
     # Only allow withdrawal for applications that haven't been submitted
     if application["status"] in ["submitted", "evaluated", "reviewed", "shortlisted"]:
         raise HTTPException(status_code=400, detail="Cannot withdraw application that has been submitted")
@@ -534,6 +565,19 @@ async def withdraw_application(
     await db.jobs.update_one(
         {"_id": application["job_id"]},
         {"$inc": {"application_count": -1}}
+    )
+    
+    # Log withdrawal action
+    AuditLogger.log_action(
+        user_id=str(current_user["_id"]),
+        action="STUDENT_APPLICATION_WITHDRAW",
+        resource_type="application",
+        resource_id=application_id,
+        details={
+            "job_id": str(application.get("job_id")),
+            "status": application.get("status")
+        },
+        ip_address=ip_address
     )
 
 # Helper function to calculate application summary
@@ -618,7 +662,7 @@ async def get_student_analytics(
     categories: Optional[List[str]] = Query(None, description="Filter by categories"),
     include_comparisons: bool = Query(True, description="Include peer comparisons"),
     include_predictions: bool = Query(False, description="Include performance predictions"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get comprehensive analytics data for a student."""
     db = get_database()
@@ -781,7 +825,7 @@ async def get_student_analytics(
 @audit_action("STUDENT_SKILLS_VIEW", "analytics")
 async def get_student_skill_progression(
     request: Request,
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get detailed skill progression data for a student."""
     db = get_database()
@@ -835,7 +879,7 @@ async def get_student_skill_progression(
 @audit_action("STUDENT_RANKING_VIEW", "analytics")
 async def get_student_ranking(
     request: Request,
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get student ranking and peer comparison data."""
     db = get_database()
@@ -883,7 +927,7 @@ async def get_student_ranking(
 async def create_performance_goal(
     request: Request,
     goal_data: dict = Body(...),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Create a new performance goal for the student."""
     db = get_database()
@@ -917,7 +961,7 @@ async def create_performance_goal(
 @audit_action("STUDENT_PROFILE_VIEW", "profile")
 async def get_student_profile(
     request: Request,
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get the student's profile information."""
     db = get_database()
@@ -1000,7 +1044,7 @@ async def get_student_profile(
 async def update_student_profile(
     request: Request,
     profile_update: StudentProfileUpdate = Body(...),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Update the student's profile information."""
     db = get_database()
@@ -1017,28 +1061,85 @@ async def update_student_profile(
     if existing_profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     
+    # Verify profile ownership
+    if str(existing_profile.get("user_id")) != str(current_user["_id"]):
+        raise HTTPException(status_code=403, detail="Access denied. You can only update your own profile.")
+    
     # Sanitize and prepare update data
     update_data = {}
+    ip_address = await get_client_ip(request)
     
-    if profile_update.personal_info:
-        sanitized_personal = InputSanitizer.sanitize_dict(profile_update.personal_info.model_dump(exclude_none=True))
-        update_data["personal_info"] = {**existing_profile.get("personal_info", {}), **sanitized_personal}
-    
-    if profile_update.skills:
-        sanitized_skills = InputSanitizer.sanitize_dict(profile_update.skills.model_dump(exclude_none=True))
-        update_data["skills"] = {**existing_profile.get("skills", {}), **sanitized_skills}
-    
-    if profile_update.experience:
-        sanitized_experience = InputSanitizer.sanitize_dict(profile_update.experience.model_dump(exclude_none=True))
-        update_data["experience"] = {**existing_profile.get("experience", {}), **sanitized_experience}
-    
-    if profile_update.preferences:
-        sanitized_preferences = InputSanitizer.sanitize_dict(profile_update.preferences.model_dump(exclude_none=True))
-        update_data["preferences"] = {**existing_profile.get("preferences", {}), **sanitized_preferences}
-    
-    if profile_update.portfolio:
-        sanitized_portfolio = InputSanitizer.sanitize_dict(profile_update.portfolio.model_dump(exclude_none=True))
-        update_data["portfolio"] = {**existing_profile.get("portfolio", {}), **sanitized_portfolio}
+    try:
+        if profile_update.personal_info:
+            personal_dict = profile_update.personal_info.model_dump(exclude_none=True)
+            sanitized_personal = {}
+            for key, value in personal_dict.items():
+                if isinstance(value, str):
+                    sanitized_personal[key] = InputSanitizer.sanitize_string(value, max_length=500)
+                else:
+                    sanitized_personal[key] = value
+            update_data["personal_info"] = {**existing_profile.get("personal_info", {}), **sanitized_personal}
+        
+        if profile_update.skills:
+            skills_dict = profile_update.skills.model_dump(exclude_none=True)
+            sanitized_skills = {}
+            for key, value in skills_dict.items():
+                if isinstance(value, str):
+                    sanitized_skills[key] = InputSanitizer.sanitize_string(value, max_length=200)
+                elif isinstance(value, list):
+                    sanitized_skills[key] = [
+                        InputSanitizer.sanitize_string(item, max_length=100) if isinstance(item, str) else item
+                        for item in value[:50]  # Limit to 50 items
+                    ]
+                else:
+                    sanitized_skills[key] = value
+            update_data["skills"] = {**existing_profile.get("skills", {}), **sanitized_skills}
+        
+        if profile_update.experience:
+            experience_dict = profile_update.experience.model_dump(exclude_none=True)
+            sanitized_experience = {}
+            for key, value in experience_dict.items():
+                if isinstance(value, str):
+                    sanitized_experience[key] = InputSanitizer.sanitize_string(value, max_length=1000)
+                elif isinstance(value, list):
+                    sanitized_experience[key] = [
+                        InputSanitizer.sanitize_json(item) if isinstance(item, dict) else item
+                        for item in value[:20]  # Limit to 20 items
+                    ]
+                else:
+                    sanitized_experience[key] = value
+            update_data["experience"] = {**existing_profile.get("experience", {}), **sanitized_experience}
+        
+        if profile_update.preferences:
+            preferences_dict = profile_update.preferences.model_dump(exclude_none=True)
+            sanitized_preferences = {}
+            for key, value in preferences_dict.items():
+                if isinstance(value, str):
+                    sanitized_preferences[key] = InputSanitizer.sanitize_string(value, max_length=200)
+                else:
+                    sanitized_preferences[key] = value
+            update_data["preferences"] = {**existing_profile.get("preferences", {}), **sanitized_preferences}
+        
+        if profile_update.portfolio:
+            portfolio_dict = profile_update.portfolio.model_dump(exclude_none=True)
+            sanitized_portfolio = {}
+            for key, value in portfolio_dict.items():
+                if isinstance(value, str):
+                    # URLs need special handling
+                    if 'url' in key.lower():
+                        sanitized_portfolio[key] = InputSanitizer.sanitize_string(value, max_length=500)
+                    else:
+                        sanitized_portfolio[key] = InputSanitizer.sanitize_string(value, max_length=1000)
+                elif isinstance(value, list):
+                    sanitized_portfolio[key] = [
+                        InputSanitizer.sanitize_string(item, max_length=500) if isinstance(item, str) else item
+                        for item in value[:20]  # Limit to 20 items
+                    ]
+                else:
+                    sanitized_portfolio[key] = value
+            update_data["portfolio"] = {**existing_profile.get("portfolio", {}), **sanitized_portfolio}
+    except SecurityError as e:
+        raise HTTPException(status_code=400, detail=f"Input validation failed: {str(e)}")
     
     if profile_update.notification_preferences:
         update_data["notification_preferences"] = profile_update.notification_preferences.model_dump()
@@ -1059,6 +1160,16 @@ async def update_student_profile(
         {"$set": update_data}
     )
     
+    # Log profile update
+    AuditLogger.log_action(
+        user_id=str(current_user["_id"]),
+        action="STUDENT_PROFILE_UPDATE",
+        resource_type="profile",
+        resource_id=str(existing_profile.get("_id")),
+        details={"updated_fields": list(update_data.keys())},
+        ip_address=ip_address
+    )
+    
     # Return updated profile
     updated_profile = await db.student_profiles.find_one({"user_id": student_id})
     return updated_profile
@@ -1067,7 +1178,7 @@ async def update_student_profile(
 @audit_action("STUDENT_PROFILE_COMPLETENESS", "profile")
 async def get_profile_completeness(
     request: Request,
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_student())
 ):
     """Get detailed profile completeness analysis and suggestions."""
     db = get_database()

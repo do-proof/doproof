@@ -15,35 +15,46 @@ const Header: React.FC = () => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
-        <div className="container-custom py-4">
+      <header 
+        className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm"
+        role="banner"
+      >
+        <nav className="container-custom py-4" aria-label="Main navigation">
           <div className="flex items-center justify-between">
             {/* Logo */}
             <div className="flex items-center space-x-3">
-              <div className="text-3xl">🚀</div>
+              <div className="text-3xl" aria-hidden="true">🚀</div>
               <div>
-                <h1 className="text-2xl font-bold gradient-text">DoProof</h1>
-                <p className="text-xs text-gray-500 -mt-1">Empowering Innovation</p>
+                <h1 className="text-2xl font-bold gradient-text">
+                  <a href="/" aria-label="DoProof home page">DoProof</a>
+                </h1>
+                <p className="text-xs text-gray-500 -mt-1 sr-only sm:not-sr-only">Empowering Innovation</p>
               </div>
             </div>
 
             {/* Login/Logout Button */}
             {isAuthenticated ? (
-              <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-600">Welcome, {user?.email}!</span>
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <span className="text-sm text-gray-600 sr-only sm:not-sr-only">
+                  Welcome, <span className="font-medium">{user?.email}</span>!
+                </span>
                 <button
                   onClick={handleLogout}
-                  className="btn-outline text-sm px-6 py-2"
+                  className="btn-outline text-sm px-4 sm:px-6 py-2 min-h-[44px] min-w-[44px] sm:min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  aria-label="Logout"
                 >
-                  Logout
+                  <span className="sr-only sm:not-sr-only">Logout</span>
+                  <span className="sm:sr-only" aria-hidden="true">🚪</span>
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setIsLoginModalOpen(true)}
-                className="btn-outline text-sm px-6 py-2"
+                className="btn-outline text-sm px-4 sm:px-6 py-2 min-h-[44px] min-w-[44px] sm:min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                aria-label="Get started - Login or sign up"
               >
-                Get Started
+                <span className="sr-only sm:not-sr-only">Get Started</span>
+                <span className="sm:sr-only" aria-hidden="true">👤</span>
               </button>
             )}
           </div>

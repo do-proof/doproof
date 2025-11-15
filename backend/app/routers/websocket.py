@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPExce
 from typing import Dict, List
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 
 from app.core.auth import get_current_user_websocket
@@ -77,7 +77,7 @@ async def websocket_notifications(websocket: WebSocket, user_id: str):
         await websocket.send_text(json.dumps({
             "type": "connection_established",
             "message": "Connected to notification stream",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }))
         
         # Keep connection alive and handle incoming messages
@@ -90,7 +90,7 @@ async def websocket_notifications(websocket: WebSocket, user_id: str):
                 if message.get("type") == "ping":
                     await websocket.send_text(json.dumps({
                         "type": "pong",
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     }))
                 elif message.get("type") == "mark_read":
                     # Handle marking notifications as read
@@ -100,7 +100,7 @@ async def websocket_notifications(websocket: WebSocket, user_id: str):
                         await websocket.send_text(json.dumps({
                             "type": "notification_marked_read",
                             "notification_id": notification_id,
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }))
                         
             except WebSocketDisconnect:
@@ -168,9 +168,85 @@ async def notify_user_realtime(db, user_id: ObjectId, notification_type: str, ti
         title=title,
         message=message,
         data=data or {},
-        created_at=datetime.utcnow().isoformat()
+        created_at=datetime.now(timezone.utc).isoformat()
     )
     
     await send_realtime_notification(str(user_id), realtime_notification)
     
     return notification_id
+
+# Function to send application status update via WebSocket
+async def send_application_status_update(
+    user_id: str,
+    application_id: str,
+    status: str,
+    ai_evaluation: dict = None,
+    recruiter_review: dict = None
+):
+    """Send real-time application status update to a user."""
+    message = json.dumps({
+        "type": "application_status_update",
+        "data": {
+            "application_id": application_id,
+            "status": status,
+            "ai_evaluation": ai_evaluation,
+            "recruiter_review": recruiter_review,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    })
+    await manager.send_personal_message(message, user_id)
+
+# Function to send time tracking update via WebSocket
+async def send_time_tracking_update(
+    user_id: str,
+    submission_id: str,
+    time_spent: int,
+    last_activity: str = None
+):
+    """Send real-time time tracking update to a user."""
+    message = json.dumps({
+        "type": "time_tracking_update",
+        "data": {
+            "submission_id": submission_id,
+            "time_spent": time_spent,
+            "last_activity": last_activity or datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    })
+    await manager.send_personal_message(message, user_id)
+
+# Helper function to notify when AI evaluation is completed
+async def notify_evaluation_complete_realtime(
+    db,
+    submission_id: ObjectId,
+    evaluation_data: dict
+):
+    """Send real-time update when AI evaluation is completed."""
+    # Get submission and application
+    submission = await db.task_submissions.find_one({"_id": submission_id})
+    if not submission:
+        return
+    
+    application = await db.applications.find_one({
+        "job_id": submission["job_id"],
+        "candidate_id": submission["candidate_id"]
+    })
+    
+    if application:
+        # Update submission status to evaluated
+        await db.task_submissions.update_one(
+            {"_id": submission_id},
+            {"$set": {"status": "evaluated", "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        # Send real-time application status update
+        await send_application_status_update(
+            user_id=str(application["candidate_id"]),
+            application_id=str(application["_id"]),
+            status="evaluated",
+            ai_evaluation={
+                "overall_score": evaluation_data.get("overall_score", 0),
+                "criteria_scores": evaluation_data.get("criteria_scores", {}),
+                "feedback": evaluation_data.get("feedback", "")
+            }
+        )

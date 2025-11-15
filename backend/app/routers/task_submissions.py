@@ -7,7 +7,7 @@ import math
 from app.core.auth import get_current_user, require_recruiter
 from app.core.database import get_database
 from app.core.security import (
-    InputSanitizer, AuditLogger, CompanyIsolation, 
+    InputSanitizer, AuditLogger, CompanyIsolation, StudentDataIsolation,
     audit_action, get_client_ip, SecurityError
 )
 from app.models.task_submission import TaskSubmissionModel, SubmissionStatus
@@ -153,8 +153,14 @@ async def get_task_submission(
             raise HTTPException(status_code=403, detail="Access denied to this submission")
     
     elif user_role == UserRole.STUDENT:
-        # Students can only access their own submissions
-        if submission["candidate_id"] != user_id:
+        # Students can only access their own submissions - use data isolation
+        try:
+            StudentDataIsolation.ensure_student_owns_resource(
+                current_user,
+                submission,
+                resource_id_field="candidate_id"
+            )
+        except HTTPException:
             # Log unauthorized access attempt
             ip_address = await get_client_ip(request)
             AuditLogger.log_action(
@@ -164,7 +170,7 @@ async def get_task_submission(
                 resource_id=submission_id,
                 ip_address=ip_address
             )
-            raise HTTPException(status_code=403, detail="Access denied to this submission")
+            raise
     
     # Admin can access everything (no additional checks needed)
     
@@ -272,37 +278,41 @@ async def update_task_submission(
         raise HTTPException(status_code=404, detail="Task submission not found")
     
     # Check permissions - either the candidate who owns it or recruiter who owns the job
-    if str(submission["candidate_id"]) == current_user["_id"]:
+    user_role = current_user.get("role")
+    if user_role == UserRole.STUDENT:
+        # Verify ownership using data isolation
+        StudentDataIsolation.ensure_student_owns_resource(
+            current_user,
+            submission,
+            resource_id_field="candidate_id"
+        )
         # Candidate can only update their own in-progress submissions
         if submission["status"] != SubmissionStatus.IN_PROGRESS:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot update submitted task"
             )
-    else:
+    elif user_role == UserRole.RECRUITER:
         # Check if current user is the recruiter for this job
-        user_role = current_user.get("role")
+        isolation_filter = CompanyIsolation.get_isolation_filter(current_user)
+        isolation_filter["_id"] = submission["job_id"]
         
-        if user_role == UserRole.RECRUITER:
-            isolation_filter = CompanyIsolation.get_isolation_filter(current_user)
-            isolation_filter["_id"] = submission["job_id"]
-            
-            job = await db.jobs.find_one(isolation_filter)
-            
-            if job is None:
-                # Log unauthorized access attempt
-                ip_address = await get_client_ip(request)
-                AuditLogger.log_action(
-                    user_id=str(current_user["_id"]),
-                    action="UNAUTHORIZED_SUBMISSION_UPDATE_ATTEMPT",
-                    resource_type="task_submission",
-                    resource_id=submission_id,
-                    ip_address=ip_address
-                )
-                raise HTTPException(status_code=403, detail="Access denied to this submission")
-        elif user_role != UserRole.ADMIN:
-            # Only admin, recruiter, or candidate can update
+        job = await db.jobs.find_one(isolation_filter)
+        
+        if job is None:
+            # Log unauthorized access attempt
+            ip_address = await get_client_ip(request)
+            AuditLogger.log_action(
+                user_id=str(current_user["_id"]),
+                action="UNAUTHORIZED_SUBMISSION_UPDATE_ATTEMPT",
+                resource_type="task_submission",
+                resource_id=submission_id,
+                ip_address=ip_address
+            )
             raise HTTPException(status_code=403, detail="Access denied to this submission")
+    elif user_role != UserRole.ADMIN:
+        # Only admin, recruiter, or candidate can update
+        raise HTTPException(status_code=403, detail="Access denied to this submission")
     
     # Prepare and sanitize update data
     try:
@@ -338,6 +348,15 @@ async def update_task_submission(
                 {"_id": submission_object_id},
                 {"$set": update_data}
             )
+            
+            # Send real-time time tracking update if time_spent was updated
+            if "time_spent" in update_data and user_role == UserRole.STUDENT:
+                from app.routers.websocket import send_time_tracking_update
+                await send_time_tracking_update(
+                    user_id=str(current_user["_id"]),
+                    submission_id=submission_id,
+                    time_spent=update_data["time_spent"]
+                )
         except Exception as e:
             raise HTTPException(
                 status_code=500,
@@ -364,8 +383,15 @@ async def submit_task(
     if submission is None:
         raise HTTPException(status_code=404, detail="Task submission not found")
     
-    # Only the candidate can submit their own task
-    if str(submission["candidate_id"]) != current_user["_id"]:
+    # Only the candidate can submit their own task - use data isolation
+    user_role = current_user.get("role")
+    if user_role == UserRole.STUDENT:
+        StudentDataIsolation.ensure_student_owns_resource(
+            current_user,
+            submission,
+            resource_id_field="candidate_id"
+        )
+    elif user_role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Access denied to this submission")
     
     # Can only submit in-progress tasks
@@ -465,6 +491,20 @@ async def add_recruiter_review(
             {"_id": ObjectId(submission_id)},
             {"$set": update_data}
         )
+        
+        # Get the application to find user_id
+        from app.models.interview import ApplicationModel
+        application = await db.applications.find_one({"job_id": submission["job_id"], "candidate_id": submission["candidate_id"]})
+        
+        # Send real-time application status update via WebSocket
+        if application:
+            from app.routers.websocket import send_application_status_update
+            await send_application_status_update(
+                user_id=str(application["candidate_id"]),
+                application_id=str(application["_id"]),
+                status=new_status,
+                recruiter_review=review_data
+            )
         
         # Send notification to student about recruiter review
         await notify_recruiter_review(

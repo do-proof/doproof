@@ -15,6 +15,67 @@ Cypress.Commands.add('loginAsRecruiter', () => {
   cy.url().should('include', '/recruiter')
 })
 
+// Login as student
+Cypress.Commands.add('loginAsStudent', () => {
+  cy.login('student@example.com', 'password123')
+  cy.url().should('include', '/student')
+})
+
+// Enroll in a job
+Cypress.Commands.add('enrollInJob', (jobId, enrollmentData = {}) => {
+  cy.request({
+    method: 'POST',
+    url: `${Cypress.env('apiUrl')}/students/applications/${jobId}/enroll`,
+    body: {
+      cover_letter: 'Test cover letter',
+      ...enrollmentData
+    },
+    headers: {
+      'Authorization': `Bearer ${Cypress.env('authToken')}`
+    }
+  }).then((response) => {
+    expect(response.status).to.eq(201)
+    return response.body
+  })
+})
+
+// Submit a task
+Cypress.Commands.add('submitTask', (jobId, submissionData = {}) => {
+  cy.request({
+    method: 'POST',
+    url: `${Cypress.env('apiUrl')}/task-submissions`,
+    body: {
+      job_id: jobId,
+      submission: {
+        type: 'text',
+        content: 'Test submission content',
+        ...submissionData
+      }
+    },
+    headers: {
+      'Authorization': `Bearer ${Cypress.env('authToken')}`
+    }
+  }).then((response) => {
+    expect(response.status).to.eq(201)
+    return response.body
+  })
+})
+
+// Update student profile
+Cypress.Commands.add('updateStudentProfile', (profileData) => {
+  cy.request({
+    method: 'PUT',
+    url: `${Cypress.env('apiUrl')}/students/profile`,
+    body: profileData,
+    headers: {
+      'Authorization': `Bearer ${Cypress.env('authToken')}`
+    }
+  }).then((response) => {
+    expect(response.status).to.eq(200)
+    return response.body
+  })
+})
+
 // Create a test job
 Cypress.Commands.add('createTestJob', (jobData = {}) => {
   const defaultJobData = {

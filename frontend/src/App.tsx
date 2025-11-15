@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { WebSocketProvider } from './context/WebSocketContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotificationContainer from './components/NotificationContainer';
 import RecruiterErrorBoundary from './components/recruiter/RecruiterErrorBoundary';
+import StudentErrorBoundary from './components/student/StudentErrorBoundary';
+import OfflineBanner from './components/OfflineBanner';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import Features from './components/Features';
@@ -19,13 +22,15 @@ import StudentDashboard from './components/StudentDashboard';
 import RecruiterDashboard from './components/RecruiterDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import ProfileCreation from './components/ProfileCreation';
+import LoadingSpinner from './components/LoadingSpinner';
+import SkipLink from './components/SkipLink';
 
-// Student Pages
-import MyApplications from './pages/student/MyApplications';
-import Recommendations from './pages/student/Recommendations';
-import StudentAnalytics from './pages/student/StudentAnalytics';
-import StudentProfile from './pages/student/StudentProfile';
-import SubmissionHistory from './pages/student/SubmissionHistory';
+// Code splitting: Lazy load student pages
+const MyApplications = lazy(() => import('./pages/student/MyApplications'));
+const Recommendations = lazy(() => import('./pages/student/Recommendations'));
+const StudentAnalytics = lazy(() => import('./pages/student/StudentAnalytics'));
+const StudentProfile = lazy(() => import('./pages/student/StudentProfile'));
+const SubmissionHistory = lazy(() => import('./pages/student/SubmissionHistory'));
 
 // Recruiter Pages
 import JobPostings from './pages/recruiter/JobPostings';
@@ -36,19 +41,24 @@ import Interviews from './pages/recruiter/Interviews';
 import Analytics from './pages/recruiter/Analytics';
 import CompanyProfile from './pages/recruiter/CompanyProfile';
 
-// Create a client
+// Create a client with optimized caching and performance settings
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: (failureCount, error: any) => {
-        // Don't retry on 4xx errors except 429
+        // Don't retry on 4xx errors except 429 (rate limit)
         if (error?.status >= 400 && error?.status < 500 && error?.status !== 429) {
           return false;
         }
         return failureCount < 3;
       },
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+      staleTime: 5 * 60 * 1000, // 5 minutes - data is fresh for 5 minutes
+      gcTime: 30 * 60 * 1000, // 30 minutes - keep unused data in cache for 30 minutes
+      refetchOnWindowFocus: false, // Don't refetch on window focus for better performance
+      refetchOnReconnect: true, // Refetch when connection is restored
+      refetchOnMount: true, // Refetch when component mounts (can be overridden per query)
+      // Enable structural sharing for better performance
+      structuralSharing: true,
     },
     mutations: {
       retry: (failureCount, error: any) => {
@@ -82,15 +92,20 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <NotificationProvider>
-            <Router>
-            <Routes>
+                  <WebSocketProvider>
+                    <Router>
+                      <SkipLink href="#main-content">Skip to main content</SkipLink>
+                      <OfflineBanner />
+                      <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route 
                 path="/student-dashboard" 
                 element={
                   <ProtectedRoute requiredUserType="student">
-                    <StudentDashboard />
+                    <StudentErrorBoundary pageTitle="Student Dashboard">
+                      <StudentDashboard />
+                    </StudentErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -103,12 +118,16 @@ function App() {
                 } 
               />
               
-              {/* Student Pages */}
+              {/* Student Pages - Code Split with Suspense */}
               <Route 
                 path="/student/applications" 
                 element={
                   <ProtectedRoute requiredUserType="student">
-                    <MyApplications />
+                    <StudentErrorBoundary pageTitle="My Applications">
+                      <Suspense fallback={<LoadingSpinner />}>
+                        <MyApplications />
+                      </Suspense>
+                    </StudentErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -116,7 +135,11 @@ function App() {
                 path="/student/recommendations" 
                 element={
                   <ProtectedRoute requiredUserType="student">
-                    <Recommendations />
+                    <StudentErrorBoundary pageTitle="Recommendations">
+                      <Suspense fallback={<LoadingSpinner />}>
+                        <Recommendations />
+                      </Suspense>
+                    </StudentErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -124,7 +147,11 @@ function App() {
                 path="/student/analytics" 
                 element={
                   <ProtectedRoute requiredUserType="student">
-                    <StudentAnalytics />
+                    <StudentErrorBoundary pageTitle="Analytics">
+                      <Suspense fallback={<LoadingSpinner />}>
+                        <StudentAnalytics />
+                      </Suspense>
+                    </StudentErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -132,7 +159,11 @@ function App() {
                 path="/student/profile" 
                 element={
                   <ProtectedRoute requiredUserType="student">
-                    <StudentProfile />
+                    <StudentErrorBoundary pageTitle="Profile">
+                      <Suspense fallback={<LoadingSpinner />}>
+                        <StudentProfile />
+                      </Suspense>
+                    </StudentErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -140,7 +171,11 @@ function App() {
                 path="/student/history" 
                 element={
                   <ProtectedRoute requiredUserType="student">
-                    <SubmissionHistory />
+                    <StudentErrorBoundary pageTitle="Submission History">
+                      <Suspense fallback={<LoadingSpinner />}>
+                        <SubmissionHistory />
+                      </Suspense>
+                    </StudentErrorBoundary>
                   </ProtectedRoute>
                 } 
               />
@@ -243,8 +278,9 @@ function App() {
             <NotificationContainer />
             <ReactQueryDevtools initialIsOpen={false} />
           </Router>
-        </NotificationProvider>
-      </AuthProvider>
+            </WebSocketProvider>
+          </NotificationProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

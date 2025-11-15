@@ -198,9 +198,11 @@ const StudentDashboard: React.FC = () => {
   // Loading state
   if (jobsLoading || applicationsLoading || summaryLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <LoadingSpinner />
-      </div>
+      <main id="main-content" role="main" aria-label="Student Dashboard">
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+          <LoadingSpinner />
+        </div>
+      </main>
     );
   }
 
@@ -217,9 +219,9 @@ const StudentDashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <main id="main-content" role="main" aria-label="Student Dashboard" className="min-h-screen bg-gray-50">
       {/* Navigation Bar */}
-      <nav className="bg-white shadow-sm border-b border-gray-200">
+      <nav className="bg-white shadow-sm border-b border-gray-200" aria-label="Dashboard navigation">
         <div className="container-custom">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-8">
