@@ -39,7 +39,7 @@ const SubmissionHistory: React.FC = () => {
   const {
     data: jobsData,
     isLoading: jobsLoading
-  } = useJobs({ per_page: 100 }); // Get jobs for filtering
+  } = useJobs({}); // Get jobs for filtering
 
   const jobs = jobsData?.jobs || [];
   const jobsMap = useMemo(() => {

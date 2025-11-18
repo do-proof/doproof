@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, Requ
 from bson import ObjectId
 import math
 
-from app.core.auth import get_current_user, require_any_authenticated
+from app.core.auth import get_current_user, require_authenticated
 from app.core.database import get_database
 from app.core.security import (
     InputSanitizer, AuditLogger, audit_action, get_client_ip, SecurityError
@@ -24,7 +24,7 @@ async def get_notifications(
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     unread_only: bool = Query(False, description="Show only unread notifications"),
     notification_type: Optional[str] = Query(None, description="Filter by notification type"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Get notifications for the current user."""
     db = get_database()
@@ -83,7 +83,7 @@ async def get_notifications(
 
 @router.get("/stats", response_model=NotificationStats)
 async def get_notification_stats(
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Get notification statistics for the current user."""
     db = get_database()
@@ -121,7 +121,7 @@ async def get_notification_stats(
 async def mark_notification_read(
     request: Request,
     notification_id: str = Path(..., description="Notification ID"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Mark a notification as read."""
     db = get_database()
@@ -171,7 +171,7 @@ async def mark_notification_read(
 @audit_action("NOTIFICATIONS_MARK_ALL_READ", "notification")
 async def mark_all_notifications_read(
     request: Request,
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Mark all notifications as read for the current user."""
     db = get_database()
@@ -194,7 +194,7 @@ async def mark_all_notifications_read(
 async def delete_notification(
     request: Request,
     notification_id: str = Path(..., description="Notification ID"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Delete a notification."""
     db = get_database()
@@ -220,7 +220,7 @@ async def delete_notification(
 @audit_action("NOTIFICATIONS_CLEAR_ALL", "notification")
 async def clear_all_notifications(
     request: Request,
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Clear all notifications for the current user."""
     db = get_database()

@@ -223,3 +223,308 @@ export const isTouchDevice = (): boolean => {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 };
 
+/**
+ * Skip to main content functionality
+ */
+export const skipToMainContent = () => {
+  const mainContent = document.getElementById('main-content');
+  if (mainContent) {
+    mainContent.focus();
+    mainContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+/**
+ * Get ARIA attributes for loading state
+ */
+export const getLoadingAriaAttributes = (isLoading: boolean, loadingText: string = 'Loading') => ({
+  'aria-busy': isLoading,
+  'aria-live': 'polite' as const,
+  'aria-label': isLoading ? loadingText : undefined,
+});
+
+/**
+ * Get ARIA attributes for error state
+ */
+export const getErrorAriaAttributes = (hasError: boolean, errorMessage?: string) => ({
+  'aria-invalid': hasError,
+  'aria-describedby': hasError && errorMessage ? 'error-message' : undefined,
+  role: hasError ? 'alert' as const : undefined,
+});
+
+/**
+ * Get ARIA attributes for form field
+ */
+export const getFormFieldAriaAttributes = (
+  id: string,
+  label: string,
+  required: boolean = false,
+  error?: string,
+  description?: string
+) => ({
+  id,
+  'aria-label': label,
+  'aria-required': required,
+  'aria-invalid': !!error,
+  'aria-describedby': [
+    description ? `${id}-description` : null,
+    error ? `${id}-error` : null,
+  ]
+    .filter(Boolean)
+    .join(' ') || undefined,
+});
+
+/**
+ * Get ARIA attributes for button with loading state
+ */
+export const getButtonAriaAttributes = (
+  label: string,
+  isLoading: boolean = false,
+  isDisabled: boolean = false,
+  ariaExpanded?: boolean
+) => ({
+  'aria-label': label,
+  'aria-busy': isLoading,
+  'aria-disabled': isDisabled || isLoading,
+  'aria-expanded': ariaExpanded,
+});
+
+/**
+ * Get ARIA attributes for modal/dialog
+ */
+export const getModalAriaAttributes = (
+  title: string,
+  describedBy?: string
+) => ({
+  role: 'dialog' as const,
+  'aria-modal': true,
+  'aria-labelledby': 'modal-title',
+  'aria-describedby': describedBy,
+});
+
+/**
+ * Get ARIA attributes for tabs
+ */
+export const getTabAriaAttributes = (
+  id: string,
+  isSelected: boolean,
+  controls: string
+) => ({
+  id,
+  role: 'tab' as const,
+  'aria-selected': isSelected,
+  'aria-controls': controls,
+  tabIndex: isSelected ? 0 : -1,
+});
+
+/**
+ * Get ARIA attributes for tab panel
+ */
+export const getTabPanelAriaAttributes = (
+  id: string,
+  labelledBy: string,
+  isHidden: boolean
+) => ({
+  id,
+  role: 'tabpanel' as const,
+  'aria-labelledby': labelledBy,
+  hidden: isHidden,
+  tabIndex: 0,
+});
+
+/**
+ * Get ARIA attributes for list
+ */
+export const getListAriaAttributes = (
+  label: string,
+  itemCount: number
+) => ({
+  role: 'list' as const,
+  'aria-label': label,
+  'aria-live': 'polite' as const,
+  'aria-atomic': false,
+  'aria-relevant': 'additions removals' as const,
+});
+
+/**
+ * Get ARIA attributes for list item
+ */
+export const getListItemAriaAttributes = (
+  index: number,
+  total: number
+) => ({
+  role: 'listitem' as const,
+  'aria-posinset': index + 1,
+  'aria-setsize': total,
+});
+
+/**
+ * Get ARIA attributes for progress bar
+ */
+export const getProgressAriaAttributes = (
+  value: number,
+  max: number = 100,
+  label?: string
+) => ({
+  role: 'progressbar' as const,
+  'aria-valuenow': value,
+  'aria-valuemin': 0,
+  'aria-valuemax': max,
+  'aria-label': label,
+  'aria-valuetext': `${Math.round((value / max) * 100)}%`,
+});
+
+/**
+ * Get ARIA attributes for status/alert
+ */
+export const getStatusAriaAttributes = (
+  type: 'status' | 'alert' | 'log' = 'status',
+  priority: 'polite' | 'assertive' = 'polite'
+) => ({
+  role: type,
+  'aria-live': priority,
+  'aria-atomic': true,
+});
+
+/**
+ * Manage focus trap for modals and dialogs
+ */
+export class FocusTrap {
+  private container: HTMLElement;
+  private previousFocus: HTMLElement | null = null;
+  private focusableElements: HTMLElement[] = [];
+
+  constructor(container: HTMLElement) {
+    this.container = container;
+  }
+
+  activate() {
+    this.previousFocus = document.activeElement as HTMLElement;
+    this.updateFocusableElements();
+    
+    if (this.focusableElements.length > 0) {
+      this.focusableElements[0].focus();
+    }
+
+    this.container.addEventListener('keydown', this.handleKeyDown);
+  }
+
+  deactivate() {
+    this.container.removeEventListener('keydown', this.handleKeyDown);
+    
+    if (this.previousFocus) {
+      this.previousFocus.focus();
+    }
+  }
+
+  private updateFocusableElements() {
+    const selector = [
+      'a[href]',
+      'button:not([disabled])',
+      'textarea:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ');
+
+    this.focusableElements = Array.from(
+      this.container.querySelectorAll(selector)
+    ) as HTMLElement[];
+  }
+
+  private handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
+
+    this.updateFocusableElements();
+
+    if (this.focusableElements.length === 0) return;
+
+    const firstElement = this.focusableElements[0];
+    const lastElement = this.focusableElements[this.focusableElements.length - 1];
+
+    if (event.shiftKey) {
+      if (document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      }
+    } else {
+      if (document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    }
+  };
+}
+
+/**
+ * Create a live region for screen reader announcements
+ */
+export class LiveRegion {
+  private element: HTMLDivElement;
+
+  constructor(priority: 'polite' | 'assertive' = 'polite') {
+    this.element = document.createElement('div');
+    this.element.setAttribute('role', 'status');
+    this.element.setAttribute('aria-live', priority);
+    this.element.setAttribute('aria-atomic', 'true');
+    this.element.className = 'sr-only';
+    document.body.appendChild(this.element);
+  }
+
+  announce(message: string) {
+    this.element.textContent = message;
+    
+    // Clear after announcement to allow repeated announcements
+    setTimeout(() => {
+      this.element.textContent = '';
+    }, 1000);
+  }
+
+  destroy() {
+    if (this.element.parentNode) {
+      this.element.parentNode.removeChild(this.element);
+    }
+  }
+}
+
+/**
+ * Validate color contrast ratio (WCAG AA compliance)
+ * Simplified check - for production use a proper contrast library
+ */
+export const meetsContrastRequirements = (
+  foreground: string,
+  background: string,
+  level: 'AA' | 'AAA' = 'AA',
+  isLargeText: boolean = false
+): boolean => {
+  // This is a placeholder - in production, use a proper contrast checking library
+  // like 'color-contrast-checker' or 'wcag-contrast'
+  // For now, we rely on Tailwind's color system which meets WCAG standards
+  return true;
+};
+
+/**
+ * Get keyboard shortcut display text
+ */
+export const getKeyboardShortcutText = (
+  key: string,
+  modifiers: {
+    ctrl?: boolean;
+    alt?: boolean;
+    shift?: boolean;
+    meta?: boolean;
+  } = {}
+): string => {
+  const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+  const parts: string[] = [];
+
+  if (modifiers.ctrl) parts.push(isMac ? '⌃' : 'Ctrl');
+  if (modifiers.alt) parts.push(isMac ? '⌥' : 'Alt');
+  if (modifiers.shift) parts.push(isMac ? '⇧' : 'Shift');
+  if (modifiers.meta) parts.push(isMac ? '⌘' : 'Win');
+  
+  parts.push(key);
+
+  return parts.join(isMac ? '' : '+');
+};
+

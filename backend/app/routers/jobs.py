@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status, Path, Query
 from bson import ObjectId
 import math
 
-from app.core.auth import get_current_user, require_recruiter, require_any_authenticated
+from app.core.auth import get_current_user, require_recruiter, require_authenticated
 from app.core.database import get_database
 from app.core.security import (
     InputSanitizer, AuditLogger, CompanyIsolation, 
@@ -499,7 +499,7 @@ async def browse_jobs_for_students(
     max_reward: Optional[int] = Query(None, description="Maximum reward points"),
     deadline_within: Optional[int] = Query(None, description="Jobs with deadline within X days"),
     exclude_applied: Optional[bool] = Query(False, description="Exclude jobs already applied to"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """
     Browse jobs for students with filtering, search, and recommendations.
@@ -626,7 +626,7 @@ async def browse_jobs_for_students(
 async def increment_job_view(
     request: Request,
     job_id: str = Path(..., description="Job ID"),
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Increment view count for a job when a student views it."""
     db = get_database()
@@ -673,7 +673,7 @@ async def increment_job_view(
 
 @router.get("/student/categories", response_model=List[str])
 async def get_job_categories(
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Get available job categories for filtering."""
     # This could be enhanced to be dynamic based on actual job data
@@ -699,7 +699,7 @@ async def get_job_categories(
 
 @router.get("/student/difficulties", response_model=List[str])
 async def get_job_difficulties(
-    current_user: dict = Depends(require_any_authenticated)
+    current_user: dict = Depends(require_authenticated)
 ):
     """Get available difficulty levels for filtering."""
     return ["Easy", "Medium", "Hard"]

@@ -10,6 +10,7 @@ import NotificationContainer from './components/NotificationContainer';
 import RecruiterErrorBoundary from './components/recruiter/RecruiterErrorBoundary';
 import StudentErrorBoundary from './components/student/StudentErrorBoundary';
 import OfflineBanner from './components/OfflineBanner';
+import NetworkStatusHandler from './components/NetworkStatusHandler';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import Features from './components/Features';
@@ -25,13 +26,6 @@ import ProfileCreation from './components/ProfileCreation';
 import LoadingSpinner from './components/LoadingSpinner';
 import SkipLink from './components/SkipLink';
 
-// Code splitting: Lazy load student pages
-const MyApplications = lazy(() => import('./pages/student/MyApplications'));
-const Recommendations = lazy(() => import('./pages/student/Recommendations'));
-const StudentAnalytics = lazy(() => import('./pages/student/StudentAnalytics'));
-const StudentProfile = lazy(() => import('./pages/student/StudentProfile'));
-const SubmissionHistory = lazy(() => import('./pages/student/SubmissionHistory'));
-
 // Recruiter Pages
 import JobPostings from './pages/recruiter/JobPostings';
 import JobForm from './pages/recruiter/JobForm';
@@ -40,6 +34,13 @@ import CandidateSearch from './pages/recruiter/CandidateSearch';
 import Interviews from './pages/recruiter/Interviews';
 import Analytics from './pages/recruiter/Analytics';
 import CompanyProfile from './pages/recruiter/CompanyProfile';
+
+// Code splitting: Lazy load student pages
+const MyApplications = lazy(() => import('./pages/student/MyApplications'));
+const Recommendations = lazy(() => import('./pages/student/Recommendations'));
+const StudentAnalytics = lazy(() => import('./pages/student/StudentAnalytics'));
+const StudentProfile = lazy(() => import('./pages/student/StudentProfile'));
+const SubmissionHistory = lazy(() => import('./pages/student/SubmissionHistory'));
 
 // Create a client with optimized caching and performance settings
 const queryClient = new QueryClient({
@@ -96,6 +97,7 @@ function App() {
                     <Router>
                       <SkipLink href="#main-content">Skip to main content</SkipLink>
                       <OfflineBanner />
+                      <NetworkStatusHandler showNotifications={true} autoRefetch={true} />
                       <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/auth" element={<AuthPage />} />

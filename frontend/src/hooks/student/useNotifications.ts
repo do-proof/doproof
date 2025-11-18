@@ -111,7 +111,7 @@ export const useMarkNotificationRead = () => {
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
 
-  return useMutation({
+  return useMutation<NotificationData, any, string>({
     mutationFn: async (notificationId: string): Promise<NotificationData> => {
       const response = await api.patch<NotificationData>(`/api/notifications/${notificationId}/read`);
 
@@ -150,7 +150,7 @@ export const useMarkAllNotificationsRead = () => {
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
 
-  return useMutation({
+  return useMutation<void, any, void>({
     mutationFn: async (): Promise<void> => {
       const response = await api.patch('/api/notifications/mark-all-read');
 
@@ -189,7 +189,7 @@ export const useDeleteNotification = () => {
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
 
-  return useMutation({
+  return useMutation<void, any, string>({
     mutationFn: async (notificationId: string): Promise<void> => {
       const response = await api.delete(`/api/notifications/${notificationId}`);
 
@@ -228,7 +228,7 @@ export const useClearAllNotifications = () => {
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
 
-  return useMutation({
+  return useMutation<void, any, void>({
     mutationFn: async (): Promise<void> => {
       const response = await api.delete('/api/notifications/clear-all');
 
@@ -267,7 +267,6 @@ export const useClearAllNotifications = () => {
 // Hook for real-time notifications (WebSocket)
 export const useRealtimeNotifications = () => {
   const queryClient = useQueryClient();
-  const { showInfo, showSuccess, showWarning, showError } = useNotifications();
 
   // This would be implemented with WebSocket connection
   // For now, we'll use polling as a fallback
@@ -295,24 +294,6 @@ export const useRealtimeNotifications = () => {
         };
       }
     );
-
-    // Show toast notification based on type
-    switch (notification.type) {
-      case 'deadline_reminder':
-        showWarning(notification.message, notification.title, 0);
-        break;
-      case 'evaluation_result':
-        showSuccess(notification.message, notification.title);
-        break;
-      case 'recruiter_update':
-        showInfo(notification.message, notification.title);
-        break;
-      case 'new_recommendation':
-        showInfo(notification.message, notification.title);
-        break;
-      default:
-        showInfo(notification.message, notification.title);
-    }
   };
 
   return {

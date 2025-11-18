@@ -94,42 +94,52 @@ export const jobKeys = {
 };
 
 export const useJobs = (filters: JobFilters = {}, options?: { enabled?: boolean }) => {
-  const { handleError } = useErrorHandler();
+  const { handleError, handleNetworkError } = useErrorHandler();
 
   return useQuery({
     queryKey: jobKeys.list(filters),
     queryFn: async (): Promise<JobListResponse> => {
-      // Build query parameters
-      const params = new URLSearchParams();
-      
-      if (filters.search) params.append('search', filters.search);
-      if (filters.difficulty?.length) {
-        filters.difficulty.forEach(diff => params.append('difficulty', diff));
-      }
-      if (filters.category?.length) {
-        filters.category.forEach(cat => params.append('category', cat));
-      }
-      if (filters.employment_type?.length) {
-        filters.employment_type.forEach(type => params.append('employment_type', type));
-      }
-      if (filters.location_type) params.append('location_type', filters.location_type);
-      if (filters.city) params.append('city', filters.city);
-      if (filters.country) params.append('country', filters.country);
-      if (filters.min_salary) params.append('min_salary', filters.min_salary.toString());
-      if (filters.max_salary) params.append('max_salary', filters.max_salary.toString());
-      if (filters.min_reward) params.append('min_reward', filters.min_reward.toString());
-      if (filters.max_reward) params.append('max_reward', filters.max_reward.toString());
-      if (filters.deadline_within) params.append('deadline_within', filters.deadline_within.toString());
-      if (filters.exclude_applied) params.append('exclude_applied', 'true');
+      try {
+        // Build query parameters
+        const params = new URLSearchParams();
+        
+        if (filters.search) params.append('search', filters.search);
+        if (filters.difficulty?.length) {
+          filters.difficulty.forEach(diff => params.append('difficulty', diff));
+        }
+        if (filters.category?.length) {
+          filters.category.forEach(cat => params.append('category', cat));
+        }
+        if (filters.employment_type?.length) {
+          filters.employment_type.forEach(type => params.append('employment_type', type));
+        }
+        if (filters.location_type) params.append('location_type', filters.location_type);
+        if (filters.city) params.append('city', filters.city);
+        if (filters.country) params.append('country', filters.country);
+        if (filters.min_salary) params.append('min_salary', filters.min_salary.toString());
+        if (filters.max_salary) params.append('max_salary', filters.max_salary.toString());
+        if (filters.min_reward) params.append('min_reward', filters.min_reward.toString());
+        if (filters.max_reward) params.append('max_reward', filters.max_reward.toString());
+        if (filters.deadline_within) params.append('deadline_within', filters.deadline_within.toString());
+        if (filters.exclude_applied) params.append('exclude_applied', 'true');
 
-      const endpoint = `/api/jobs/student/browse?${params.toString()}`;
-      const response = await api.get<JobListResponse>(endpoint);
+        const endpoint = `/api/jobs/student/browse?${params.toString()}`;
+        const response = await api.get<JobListResponse>(endpoint);
 
-      if (!response.success) {
-        throw response.error;
+        if (!response.success) {
+          throw response.error;
+        }
+
+        return response.data!;
+      } catch (error: any) {
+        // Handle network errors with retry option
+        if (error?.code === 'NETWORK_ERROR' || error?.code === 'TIMEOUT') {
+          handleNetworkError(error, undefined, { showNotification: false });
+        } else {
+          handleError(error, { showNotification: false });
+        }
+        throw error;
       }
-
-      return response.data!;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
@@ -141,22 +151,32 @@ export const useJobs = (filters: JobFilters = {}, options?: { enabled?: boolean 
       }
       return failureCount < 3;
     },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 };
 
 export const useJob = (jobId: string, options?: { enabled?: boolean }) => {
-  const { handleError } = useErrorHandler();
+  const { handleError, handleNetworkError } = useErrorHandler();
 
   return useQuery({
     queryKey: jobKeys.detail(jobId),
     queryFn: async (): Promise<Job> => {
-      const response = await api.get<Job>(`/api/jobs/${jobId}`);
+      try {
+        const response = await api.get<Job>(`/api/jobs/${jobId}`);
 
-      if (!response.success) {
-        throw response.error;
+        if (!response.success) {
+          throw response.error;
+        }
+
+        return response.data!;
+      } catch (error: any) {
+        if (error?.code === 'NETWORK_ERROR' || error?.code === 'TIMEOUT') {
+          handleNetworkError(error, undefined, { showNotification: false });
+        } else {
+          handleError(error, { showNotification: false });
+        }
+        throw error;
       }
-
-      return response.data!;
     },
     staleTime: 10 * 60 * 1000, // 10 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
@@ -168,22 +188,32 @@ export const useJob = (jobId: string, options?: { enabled?: boolean }) => {
       }
       return failureCount < 3;
     },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 };
 
 export const useJobRecommendations = (options?: { enabled?: boolean }) => {
-  const { handleError } = useErrorHandler();
+  const { handleError, handleNetworkError } = useErrorHandler();
 
   return useQuery({
     queryKey: jobKeys.recommendations(),
     queryFn: async (): Promise<JobWithRecommendation[]> => {
-      const response = await api.get<{ recommendations: JobWithRecommendation[] }>('/api/students/recommendations');
+      try {
+        const response = await api.get<{ recommendations: JobWithRecommendation[] }>('/api/students/recommendations');
 
-      if (!response.success) {
-        throw response.error;
+        if (!response.success) {
+          throw response.error;
+        }
+
+        return response.data!.recommendations;
+      } catch (error: any) {
+        if (error?.code === 'NETWORK_ERROR' || error?.code === 'TIMEOUT') {
+          handleNetworkError(error, undefined, { showNotification: false });
+        } else {
+          handleError(error, { showNotification: false });
+        }
+        throw error;
       }
-
-      return response.data!.recommendations;
     },
     staleTime: 15 * 60 * 1000, // 15 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
@@ -194,6 +224,7 @@ export const useJobRecommendations = (options?: { enabled?: boolean }) => {
       }
       return failureCount < 2; // Fewer retries for recommendations
     },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 };
 
@@ -204,17 +235,26 @@ export const useIncrementJobView = () => {
 
   return useMutation({
     mutationFn: async (jobId: string) => {
-      const response = await api.post(`/api/jobs/${jobId}/view`);
-      
-      if (!response.success) {
-        throw response.error;
+      try {
+        const response = await api.post(`/api/jobs/${jobId}/view`);
+        
+        if (!response.success) {
+          throw response.error;
+        }
+        
+        return response.data;
+      } catch (error: any) {
+        handleError(error, { showNotification: false, logError: true });
+        throw error;
       }
-      
-      return response.data;
     },
     onSuccess: (_, jobId) => {
       // Invalidate job details to refresh view count
       queryClient.invalidateQueries({ queryKey: jobKeys.detail(jobId) });
+    },
+    onError: (error: any) => {
+      // Silently fail for view count increment
+      console.warn('Failed to increment job view count:', error);
     },
   });
 };

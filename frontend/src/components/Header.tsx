@@ -58,7 +58,7 @@ const Header: React.FC = () => {
               </button>
             )}
           </div>
-        </div>
+        </nav>
       </header>
 
       {/* Spacer to prevent content from hiding behind fixed header */}

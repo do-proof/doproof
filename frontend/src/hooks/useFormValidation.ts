@@ -293,7 +293,7 @@ export const validationRules = {
   }),
 
   min: (min: number, message?: string): ValidationRule => ({
-    validator: (value: number) => {
+    validator: (value: any) => {
       if (value === null || value === undefined || value === '') return true;
       return Number(value) >= min || (message || `Must be at least ${min}`);
     },
@@ -301,7 +301,7 @@ export const validationRules = {
   }),
 
   max: (max: number, message?: string): ValidationRule => ({
-    validator: (value: number) => {
+    validator: (value: any) => {
       if (value === null || value === undefined || value === '') return true;
       return Number(value) <= max || (message || `Must be no more than ${max}`);
     },

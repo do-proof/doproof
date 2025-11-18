@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import users, tasks, jobs, students, notifications, websocket
+from app.routers import users, tasks, jobs, students, notifications, websocket, security
 from app.core.config import settings
 from app.core.database import connect_to_database, close_database_connection
 from app.middleware.security import SecurityMiddleware, RequestValidationMiddleware
@@ -42,6 +42,7 @@ app.include_router(tasks.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(students.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
+app.include_router(security.router, prefix="/api")
 app.include_router(websocket.router)
 
 @app.get("/")

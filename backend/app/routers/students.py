@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status, Path, Query
 from bson import ObjectId
 import math
 
-from app.core.auth import get_current_user, require_any_authenticated
+from app.core.auth import get_current_user, require_authenticated
 from app.core.database import get_database
 from app.core.security import (
     InputSanitizer, AuditLogger, audit_action, get_client_ip, SecurityError,
@@ -653,8 +653,8 @@ async def calculate_application_summary(db, student_id: ObjectId) -> dict:
             "evaluations": recent_evaluations
         }
     }
-@r
-outer.get("/analytics", response_model=dict)
+
+@router.get("/analytics", response_model=dict)
 @audit_action("STUDENT_ANALYTICS_VIEW", "analytics")
 async def get_student_analytics(
     request: Request,
@@ -954,8 +954,8 @@ async def create_performance_goal(
     result = await db.performance_goals.insert_one(goal)
     
     return {"message": "Goal created successfully", "goal_id": str(result.inserted_id)}
-# Profile
- Management Endpoints
+
+# Profile Management Endpoints
 
 @router.get("/profile", response_model=StudentProfile)
 @audit_action("STUDENT_PROFILE_VIEW", "profile")
@@ -1408,8 +1408,8 @@ def _analyze_profile_completeness(profile: dict) -> dict:
         "missing_fields": missing_fields[:10],  # Limit to top 10 suggestions
         "suggestions": suggestions[:10]
     }
-@rou
-ter.get("/submissions", response_model=List[StudentSubmissionResponse])
+
+@router.get("/submissions", response_model=List[StudentSubmissionResponse])
 @audit_action("STUDENT_SUBMISSIONS_VIEW", "submissions")
 async def get_student_submissions(
     request: Request,
@@ -1423,4 +1423,91 @@ async def get_student_submissions(
     has_recruiter_review: Optional[bool] = Query(None, description="Filter by recruiter review presence"),
     min_score: Optional[float] = Query(None, ge=0, le=100, description="Minimum AI score"),
     max_score: Optional[float] = Query(None, ge=0, le=100, description="Maximum AI score"),
-    sort_by: str = Query("created_at", descr
+    sort_by: str = Query("created_at", description="Sort by field"),
+    sort_order: str = Query("desc", description="Sort order (asc/desc)"),
+    current_user: dict = Depends(require_student())
+):
+    """Get all submissions for the current student with filtering and pagination."""
+    db = get_database()
+    
+    # Only students can view their own submissions
+    if current_user.get("role") != UserRole.STUDENT:
+        raise HTTPException(status_code=403, detail="Only students can access this endpoint")
+    
+    # Build filter query with data isolation
+    filter_query = {"candidate_id": ObjectId(current_user["_id"])}
+    
+    if status:
+        filter_query["status"] = {"$in": status}
+    
+    if job_id:
+        try:
+            job_object_id = InputSanitizer.validate_object_id(job_id)
+            filter_query["job_id"] = job_object_id
+        except SecurityError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    
+    if date_from:
+        filter_query["created_at"] = {"$gte": date_from}
+    
+    if date_to:
+        if "created_at" in filter_query:
+            filter_query["created_at"]["$lte"] = date_to
+        else:
+            filter_query["created_at"] = {"$lte": date_to}
+    
+    if has_evaluation is not None:
+        if has_evaluation:
+            filter_query["ai_evaluation"] = {"$exists": True}
+        else:
+            filter_query["ai_evaluation"] = {"$exists": False}
+    
+    if has_recruiter_review is not None:
+        if has_recruiter_review:
+            filter_query["recruiter_review"] = {"$exists": True}
+        else:
+            filter_query["recruiter_review"] = {"$exists": False}
+    
+    if min_score is not None:
+        filter_query["ai_evaluation.overall_score"] = {"$gte": min_score}
+    
+    if max_score is not None:
+        if "ai_evaluation.overall_score" in filter_query:
+            filter_query["ai_evaluation.overall_score"]["$lte"] = max_score
+        else:
+            filter_query["ai_evaluation.overall_score"] = {"$lte": max_score}
+    
+    # Get total count
+    total = await db.task_submissions.count_documents(filter_query)
+    
+    # Calculate pagination
+    skip = (page - 1) * per_page
+    total_pages = math.ceil(total / per_page) if total > 0 else 0
+    
+    # Determine sort order
+    sort_direction = -1 if sort_order == "desc" else 1
+    
+    # Get submissions with pagination
+    submissions_cursor = db.task_submissions.find(filter_query).skip(skip).limit(per_page).sort(sort_by, sort_direction)
+    submissions = await submissions_cursor.to_list(length=per_page)
+    
+    # Format response
+    formatted_submissions = []
+    for submission in submissions:
+        formatted_submissions.append({
+            "_id": str(submission["_id"]),
+            "job_id": str(submission["job_id"]),
+            "candidate_id": str(submission["candidate_id"]),
+            "status": submission["status"],
+            "started_at": submission.get("started_at").isoformat() if submission.get("started_at") else None,
+            "submitted_at": submission.get("submitted_at").isoformat() if submission.get("submitted_at") else None,
+            "time_spent": submission.get("time_spent", 0),
+            "submission": submission.get("submission"),
+            "ai_evaluation": submission.get("ai_evaluation"),
+            "recruiter_review": submission.get("recruiter_review"),
+            "cover_letter": submission.get("cover_letter"),
+            "created_at": submission.get("created_at").isoformat() if submission.get("created_at") else None,
+            "updated_at": submission.get("updated_at").isoformat() if submission.get("updated_at") else None
+        })
+    
+    return formatted_submissions

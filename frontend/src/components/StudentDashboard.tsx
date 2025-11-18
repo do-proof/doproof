@@ -311,7 +311,7 @@ const StudentDashboard: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <main className="container-custom py-8">
+      <div className="container-custom py-8">
         {/* Home Tab */}
         {activeTab === 'home' && (
           <div className="space-y-8">
@@ -661,8 +661,8 @@ const StudentDashboard: React.FC = () => {
             onSubmit={handleSubmission}
           />
         )}
-      </main>
-    </div>
+      </div>
+    </main>
   );
 };
 

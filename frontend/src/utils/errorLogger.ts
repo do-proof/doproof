@@ -158,14 +158,22 @@ class ErrorLogger {
     //   });
     // }
 
-    // Or send to your own error tracking endpoint
-    // fetch('/api/errors', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(log)
-    // }).catch(() => {
-    //   // Silently fail if error tracking is unavailable
-    // });
+    // Send to your own error tracking endpoint
+    if (this.enabled) {
+      fetch('/api/errors/log', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+        },
+        body: JSON.stringify(log),
+        // Use keepalive to ensure the request completes even if the page is closing
+        keepalive: true
+      }).catch((error) => {
+        // Silently fail if error tracking is unavailable
+        console.warn('Failed to send error to tracking service:', error);
+      });
+    }
   }
 
   /**
@@ -173,6 +181,19 @@ class ErrorLogger {
    */
   getRecentLogs(limit: number = 10): ErrorLog[] {
     return this.logs.slice(-limit);
+  }
+
+  /**
+   * Get all logs from localStorage
+   */
+  getAllStoredLogs(): ErrorLog[] {
+    try {
+      const storedLogs = localStorage.getItem('errorLogs');
+      return storedLogs ? JSON.parse(storedLogs) : [];
+    } catch (error) {
+      console.warn('Failed to retrieve stored error logs:', error);
+      return [];
+    }
   }
 
   /**
@@ -185,6 +206,45 @@ class ErrorLogger {
     } catch (error) {
       console.warn('Failed to clear error logs:', error);
     }
+  }
+
+  /**
+   * Export logs for debugging
+   */
+  exportLogs(): string {
+    const allLogs = this.getAllStoredLogs();
+    return JSON.stringify(allLogs, null, 2);
+  }
+
+  /**
+   * Get error statistics
+   */
+  getErrorStats(): {
+    total: number;
+    byType: Record<string, number>;
+    recentErrors: number;
+  } {
+    const allLogs = this.getAllStoredLogs();
+    const now = new Date().getTime();
+    const oneHourAgo = now - (60 * 60 * 1000);
+
+    const byType: Record<string, number> = {};
+    let recentErrors = 0;
+
+    allLogs.forEach(log => {
+      byType[log.errorType] = (byType[log.errorType] || 0) + 1;
+      
+      const logTime = new Date(log.timestamp).getTime();
+      if (logTime >= oneHourAgo) {
+        recentErrors++;
+      }
+    });
+
+    return {
+      total: allLogs.length,
+      byType,
+      recentErrors
+    };
   }
 }
 

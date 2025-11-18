@@ -29,18 +29,35 @@ const StudentProfile: React.FC = () => {
 
   const profileUpdater = useUpdateProfileSection();
 
+  // Show skeleton on initial load
   if (profileLoading && !profile) {
     return <ProfilePageSkeleton />;
   }
 
-  if (profileError) {
+  // Show error state with retry option
+  if (profileError && !profile) {
+    const errorMessage = profileError instanceof Error 
+      ? profileError.message 
+      : 'We couldn\'t load your profile information. Please try again.';
+    
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <ErrorMessage
-          title="Failed to Load Profile"
-          message="We couldn't load your profile information. Please try again."
-          onRetry={refetchProfile}
-        />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <ErrorMessage
+            title="Failed to Load Profile"
+            message={errorMessage}
+            onRetry={() => refetchProfile()}
+            type="error"
+          />
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => window.location.href = '/student-dashboard'}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

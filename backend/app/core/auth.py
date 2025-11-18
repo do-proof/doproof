@@ -94,3 +94,28 @@ def require_role(allowed_roles: list[UserRole]):
 require_recruiter = require_role([UserRole.RECRUITER, UserRole.ADMIN])
 require_admin = require_role([UserRole.ADMIN])
 require_authenticated = require_role([UserRole.STUDENT, UserRole.RECRUITER, UserRole.ADMIN])
+
+async def get_current_user_websocket(token: str):
+    """Get current user from WebSocket token without raising HTTP exceptions."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        email: str = payload.get("sub")
+        user_id: str = payload.get("id")
+        if email is None or user_id is None:
+            return None
+        
+        db = get_database()
+        
+        # For MongoDB, use ObjectId
+        from bson import ObjectId
+        try:
+            user_object_id = ObjectId(user_id)
+        except:
+            return None
+        
+        user = await db.users.find_one({"_id": user_object_id})
+        return user
+    except JWTError:
+        return None
+    except Exception:
+        return None

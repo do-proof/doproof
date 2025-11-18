@@ -125,12 +125,7 @@ export const useWebSocket = ({
               case 'recruiter_update':
                 const decision = notification.data.decision;
                 if (decision === 'shortlist') {
-                  showSuccess(notification.message, notification.title, 0, {
-                    label: 'View Details',
-                    onClick: () => {
-                      console.log('Navigate to application:', notification.data.job_title);
-                    }
-                  });
+                  showSuccess(notification.message, notification.title);
                 } else if (decision === 'reject') {
                   showError(notification.message, notification.title);
                 } else {
@@ -141,12 +136,7 @@ export const useWebSocket = ({
               case 'new_recommendation':
                 const matchScore = notification.data.match_score;
                 if (matchScore >= 90) {
-                  showSuccess(notification.message, notification.title, 0, {
-                    label: 'View Job',
-                    onClick: () => {
-                      console.log('Navigate to job:', notification.data.job_title);
-                    }
-                  });
+                  showSuccess(notification.message, notification.title);
                 } else {
                   showInfo(notification.message, notification.title);
                 }

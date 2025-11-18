@@ -52,9 +52,17 @@ module.exports = {
       // Ensure minimum touch target size (44x44px for accessibility)
       minHeight: {
         'touch': '44px',
+        'touch-large': '48px',
       },
       minWidth: {
         'touch': '44px',
+        'touch-large': '48px',
+      },
+      // Responsive spacing scale
+      spacing: {
+        'responsive-sm': 'clamp(0.75rem, 2vw, 1rem)',
+        'responsive-md': 'clamp(1rem, 3vw, 1.5rem)',
+        'responsive-lg': 'clamp(1.5rem, 4vw, 3rem)',
       },
     },
   },

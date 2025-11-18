@@ -172,18 +172,35 @@ const MyApplications: React.FC = () => {
     rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800', count: applicationsByStatus.rejected.length },
   };
 
-  if (applicationsLoading || jobsLoading) {
+  // Show skeleton on initial load
+  if ((applicationsLoading || jobsLoading) && !applicationsData && !jobsData) {
     return <ApplicationsPageSkeleton />;
   }
 
-  if (applicationsError) {
+  // Show error state with retry option
+  if (applicationsError && !applicationsData) {
+    const errorMessage = applicationsError instanceof Error 
+      ? applicationsError.message 
+      : 'There was an error loading your applications. Please try again.';
+    
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <ErrorMessage
-          title="Failed to Load Applications"
-          message="There was an error loading your applications. Please try again."
-          onRetry={() => window.location.reload()}
-        />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <ErrorMessage
+            title="Failed to Load Applications"
+            message={errorMessage}
+            onRetry={() => refetchApplications()}
+            type="error"
+          />
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => window.location.href = '/student/dashboard'}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

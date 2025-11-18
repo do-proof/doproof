@@ -101,14 +101,14 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
   }, []);
 
   const connect = useCallback(() => {
-    if (!user?._id || wsRef.current?.readyState === WebSocket.CONNECTING || wsRef.current?.readyState === WebSocket.OPEN) {
+    if (!user?.id || wsRef.current?.readyState === WebSocket.CONNECTING || wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
     setConnectionStatus('connecting');
     
     try {
-      const wsUrl = `${process.env.REACT_APP_WS_URL || 'ws://localhost:8000'}/ws/notifications/${user._id}`;
+      const wsUrl = `${process.env.REACT_APP_WS_URL || 'ws://localhost:8000'}/ws/notifications/${user.id}`;
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
@@ -227,7 +227,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
       console.error('Failed to create WebSocket connection:', error);
       setConnectionStatus('error');
     }
-  }, [user?._id, showInfo, showSuccess, showError]);
+  }, [user?.id, showInfo, showSuccess, showError]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -267,7 +267,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
 
   // Connect when user is available
   useEffect(() => {
-    if (user?._id) {
+    if (user?.id) {
       connect();
     } else {
       disconnect();
@@ -276,7 +276,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }
     return () => {
       disconnect();
     };
-  }, [user?._id, connect, disconnect]);
+  }, [user?.id, connect, disconnect]);
 
   // Expose setters for event handlers
   const value: WebSocketContextType = {

@@ -20,6 +20,7 @@ class StudentRateLimiter:
     
     def __init__(self):
         self.request_counts: Dict[str, list] = {}
+        self.violation_counts: Dict[str, int] = {}  # Track repeated violations
         # Different rate limits for different endpoint types
         self.limits = {
             'default': (60, 100),  # 100 requests per 60 seconds
@@ -27,6 +28,8 @@ class StudentRateLimiter:
             'student_write': (60, 20),  # 20 requests per 60 seconds
             'student_auth': (60, 10),  # 10 requests per 60 seconds
             'file_upload': (300, 10),  # 10 uploads per 5 minutes
+            'analytics': (60, 30),  # 30 analytics requests per minute
+            'profile': (60, 15),  # 15 profile updates per minute
         }
     
     def get_limit_type(self, path: str, method: str) -> str:
@@ -36,8 +39,16 @@ class StudentRateLimiter:
             return 'student_auth'
         
         # File upload endpoints
-        if '/upload' in path or method == 'POST' and '/file' in path:
+        if '/upload' in path or (method == 'POST' and '/file' in path):
             return 'file_upload'
+        
+        # Analytics endpoints
+        if '/analytics' in path:
+            return 'analytics'
+        
+        # Profile endpoints
+        if '/profile' in path and method in ['PUT', 'PATCH']:
+            return 'profile'
         
         # Write operations (POST, PUT, PATCH, DELETE)
         if method in ['POST', 'PUT', 'PATCH', 'DELETE']:
@@ -71,21 +82,30 @@ class StudentRateLimiter:
         request_count = len(self.request_counts[identifier])
         
         if request_count >= max_requests:
+            # Track violations
+            self.violation_counts[identifier] = self.violation_counts.get(identifier, 0) + 1
+            
             return True, {
                 'limit': max_requests,
                 'window': window,
                 'remaining': 0,
-                'reset_at': current_time + window
+                'reset_at': current_time + window,
+                'violations': self.violation_counts[identifier]
             }
         
         # Add current request
         self.request_counts[identifier].append(current_time)
         
+        # Reset violation count on successful request
+        if identifier in self.violation_counts:
+            self.violation_counts[identifier] = 0
+        
         return False, {
             'limit': max_requests,
             'window': window,
             'remaining': max_requests - request_count - 1,
-            'reset_at': current_time + window
+            'reset_at': current_time + window,
+            'violations': 0
         }
 
 class StudentRateLimitMiddleware(BaseHTTPMiddleware):
@@ -116,9 +136,33 @@ class StudentRateLimitMiddleware(BaseHTTPMiddleware):
         )
         
         if is_limited:
+            violations = rate_info.get('violations', 0)
+            
             rate_limit_logger.warning(
-                f"Rate limit exceeded for {identifier} on {request.url.path}"
+                f"Rate limit exceeded for {identifier} on {request.url.path} (violations: {violations})"
             )
+            
+            # Log security event for repeated violations
+            if violations >= 5:
+                from app.core.security import AuditLogger
+                import asyncio
+                
+                # Log as security event asynchronously
+                asyncio.create_task(
+                    AuditLogger.log_security_event(
+                        event_type="RATE_LIMIT_ABUSE",
+                        severity="medium" if violations < 10 else "high",
+                        description=f"Repeated rate limit violations on {request.url.path}",
+                        ip_address=identifier,
+                        details={
+                            "violations": violations,
+                            "endpoint": request.url.path,
+                            "method": request.method,
+                            "limit_type": limit_type
+                        }
+                    )
+                )
+            
             response = JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={

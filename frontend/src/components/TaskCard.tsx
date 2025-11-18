@@ -313,7 +313,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
           // The useApplicationByJob hook will automatically refetch and update the UI
         }}
       />
-    </div>
+    </article>
   );
 };
 

@@ -114,6 +114,47 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
     }
   }, [existingSubmission]);
 
+  // Helper functions defined before effects
+  const getRequiredFields = useCallback(() => {
+    const baseRequired = ['description'];
+    
+    switch (job.task?.submission_format) {
+      case 'text':
+        return [...baseRequired, 'content'];
+      case 'code':
+        return [...baseRequired, 'githubUrl'];
+      case 'presentation':
+        return [...baseRequired, 'presentationUrl'];
+      case 'file':
+        return [...baseRequired]; // Files will be checked separately
+      default:
+        return baseRequired;
+    }
+  }, [job.task?.submission_format]);
+
+  const calculateCompletionPercentage = useCallback(() => {
+    const requiredFields = getRequiredFields();
+    const completedFields = requiredFields.filter(field => {
+      const value = formData[field as keyof typeof formData];
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return false;
+    }).length;
+    
+    return Math.round((completedFields / requiredFields.length) * 100);
+  }, [formData, getRequiredFields]);
+
+  const hasFormData = useCallback(() => {
+    const { files, uploadedFiles, ...otherData } = formData;
+    return Object.values(otherData).some(value => 
+      typeof value === 'string' ? value.trim().length > 0 : false
+    ) || files.length > 0 || uploadedFiles.length > 0;
+  }, [formData]);
+
   // Set up real-time time tracking update handler
   useEffect(() => {
     setOnTimeTrackingUpdate((update: TimeTrackingUpdate) => {
@@ -157,62 +198,12 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
         clearInterval(intervalRef.current);
       }
     };
-  }, [application, timeSpent, updateProgressMutation, isDirty, existingSubmission, calculateCompletionPercentage]);
+  }, [application, updateProgressMutation, isDirty, existingSubmission, calculateCompletionPercentage]);
 
-  // Auto-save effect
-  useEffect(() => {
-    if (!isDirty || !existingSubmission || (existingSubmission as any)?.status === 'submitted') {
-      return;
-    }
-
-    const autoSaveTimer = setTimeout(() => {
-      if (hasFormData()) {
-        handleAutoSave();
-      }
-    }, 30000); // Auto-save every 30 seconds
-
-    return () => clearTimeout(autoSaveTimer);
-  }, [formData, isDirty, existingSubmission]);
-
-  const hasFormData = useCallback(() => {
-    const { files, uploadedFiles, ...otherData } = formData;
-    return Object.values(otherData).some(value => 
-      typeof value === 'string' ? value.trim().length > 0 : false
-    ) || files.length > 0 || uploadedFiles.length > 0;
+  const getSubmissionContent = useCallback(() => {
+    const { files, ...contentData } = formData;
+    return JSON.stringify(contentData);
   }, [formData]);
-
-  const calculateCompletionPercentage = useCallback(() => {
-    const requiredFields = getRequiredFields();
-    const completedFields = requiredFields.filter(field => {
-      const value = formData[field as keyof typeof formData];
-      if (typeof value === 'string') {
-        return value.trim().length > 0;
-      }
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
-      return false;
-    }).length;
-    
-    return Math.round((completedFields / requiredFields.length) * 100);
-  }, [formData]);
-
-  const getRequiredFields = () => {
-    const baseRequired = ['description'];
-    
-    switch (job.task?.submission_format) {
-      case 'text':
-        return [...baseRequired, 'content'];
-      case 'code':
-        return [...baseRequired, 'githubUrl'];
-      case 'presentation':
-        return [...baseRequired, 'presentationUrl'];
-      case 'file':
-        return [...baseRequired]; // Files will be checked separately
-      default:
-        return baseRequired;
-    }
-  };
 
   const handleAutoSave = useCallback(async () => {
     if (!(existingSubmission as any)?._id || (existingSubmission as any)?.status === 'submitted') return;
@@ -237,12 +228,22 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
       setAutoSaveStatus('error');
       setTimeout(() => setAutoSaveStatus(null), 5000);
     }
-  }, [existingSubmission, updateSubmissionMutation, timeSpent, formData]);
+  }, [existingSubmission, updateSubmissionMutation, timeSpent, getSubmissionContent]);
 
-  const getSubmissionContent = useCallback(() => {
-    const { files, ...contentData } = formData;
-    return JSON.stringify(contentData);
-  }, [formData]);
+  // Auto-save effect
+  useEffect(() => {
+    if (!isDirty || !existingSubmission || (existingSubmission as any)?.status === 'submitted') {
+      return;
+    }
+
+    const autoSaveTimer = setTimeout(() => {
+      if (hasFormData()) {
+        handleAutoSave();
+      }
+    }, 30000); // Auto-save every 30 seconds
+
+    return () => clearTimeout(autoSaveTimer);
+  }, [isDirty, existingSubmission, hasFormData, handleAutoSave]);
 
   const handleInputChange = useCallback((field: string, value: string) => {
     setFormData(prev => ({
@@ -408,7 +409,7 @@ const TaskSubmissionForm: React.FC<TaskSubmissionFormProps> = ({ job, onClose, o
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
-  }, [formData, job.task?.submission_format]);
+  }, [formData, job.task?.submission_format, getRequiredFields]);
 
   const isValidUrl = (url: string) => {
     try {

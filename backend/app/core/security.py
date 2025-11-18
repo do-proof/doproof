@@ -143,9 +143,12 @@ class AuditLogger:
         resource_type: str,
         resource_id: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
-        ip_address: Optional[str] = None
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        status: str = "success",
+        error_message: Optional[str] = None
     ):
-        """Log security-sensitive actions."""
+        """Log security-sensitive actions to file."""
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
             "user_id": user_id,
@@ -153,10 +156,16 @@ class AuditLogger:
             "resource_type": resource_type,
             "resource_id": resource_id,
             "details": details or {},
-            "ip_address": ip_address
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "status": status,
+            "error_message": error_message
         }
         
-        audit_logger.info(f"AUDIT: {log_entry}")
+        if status == "success":
+            audit_logger.info(f"AUDIT: {log_entry}")
+        else:
+            audit_logger.warning(f"AUDIT_FAILURE: {log_entry}")
     
     @staticmethod
     async def log_to_database(
@@ -165,12 +174,80 @@ class AuditLogger:
         resource_type: str,
         resource_id: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
-        ip_address: Optional[str] = None
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        status: str = "success",
+        error_message: Optional[str] = None
     ):
-        """Log audit entry to database."""
-        # For SQLite, we'll just log to file for now
-        # In a production environment, you'd want to create an audit_logs table
-        AuditLogger.log_action(user_id, action, resource_type, resource_id, details, ip_address)
+        """Log audit entry to database for persistent storage."""
+        from app.core.database import get_database
+        
+        try:
+            db = get_database()
+            
+            audit_entry = {
+                "user_id": user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "details": details or {},
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+                "status": status,
+                "error_message": error_message,
+                "timestamp": datetime.utcnow()
+            }
+            
+            await db.audit_logs.insert_one(audit_entry)
+            
+            # Also log to file
+            AuditLogger.log_action(
+                user_id, action, resource_type, resource_id, 
+                details, ip_address, user_agent, status, error_message
+            )
+        except Exception as e:
+            # If database logging fails, at least log to file
+            audit_logger.error(f"Failed to log to database: {str(e)}")
+            AuditLogger.log_action(
+                user_id, action, resource_type, resource_id, 
+                details, ip_address, user_agent, status, error_message
+            )
+    
+    @staticmethod
+    async def log_security_event(
+        event_type: str,
+        severity: str,
+        description: str,
+        ip_address: str,
+        user_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None
+    ):
+        """Log security events (suspicious activities, violations, etc.)."""
+        from app.core.database import get_database
+        
+        try:
+            db = get_database()
+            
+            security_event = {
+                "event_type": event_type,
+                "severity": severity,
+                "user_id": user_id,
+                "ip_address": ip_address,
+                "description": description,
+                "details": details or {},
+                "resolved": False,
+                "timestamp": datetime.utcnow()
+            }
+            
+            await db.security_events.insert_one(security_event)
+            
+            # Log to file based on severity
+            if severity in ["high", "critical"]:
+                audit_logger.error(f"SECURITY_EVENT: {security_event}")
+            else:
+                audit_logger.warning(f"SECURITY_EVENT: {security_event}")
+        except Exception as e:
+            audit_logger.error(f"Failed to log security event: {str(e)}")
 
 class RoleChecker:
     """Role-based access control utilities."""
@@ -215,7 +292,7 @@ async def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 def audit_action(action: str, resource_type: str):
-    """Decorator for auditing actions."""
+    """Decorator for auditing actions with enhanced logging."""
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -223,32 +300,57 @@ def audit_action(action: str, resource_type: str):
             current_user = kwargs.get('current_user')
             request = kwargs.get('request')
             
+            status = "success"
+            error_message = None
+            
             if current_user:
-                user_id = str(current_user.get("id", "unknown"))
+                user_id = str(current_user.get("_id") or current_user.get("id", "unknown"))
                 ip_address = await get_client_ip(request) if request else None
+                user_agent = request.headers.get("User-Agent") if request else None
                 
                 # Extract resource ID from path parameters
-                resource_id = kwargs.get('job_id') or kwargs.get('submission_id') or kwargs.get('interview_id')
+                resource_id = (kwargs.get('job_id') or kwargs.get('submission_id') or 
+                             kwargs.get('interview_id') or kwargs.get('application_id'))
                 
-                # Log the action
-                AuditLogger.log_action(
-                    user_id=user_id,
-                    action=action,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    ip_address=ip_address
-                )
-                
-                # Also log to database for persistent audit trail
-                await AuditLogger.log_to_database(
-                    user_id=user_id,
-                    action=action,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    ip_address=ip_address
-                )
-            
-            return await func(*args, **kwargs)
+                try:
+                    # Execute the function
+                    result = await func(*args, **kwargs)
+                    
+                    # Log successful action to database
+                    await AuditLogger.log_to_database(
+                        user_id=user_id,
+                        action=action,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                        status="success"
+                    )
+                    
+                    return result
+                    
+                except Exception as e:
+                    # Log failed action
+                    status = "failure"
+                    error_message = str(e)
+                    
+                    await AuditLogger.log_to_database(
+                        user_id=user_id,
+                        action=action,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        ip_address=ip_address,
+                        user_agent=user_agent,
+                        status="failure",
+                        error_message=error_message
+                    )
+                    
+                    # Re-raise the exception
+                    raise
+            else:
+                # No user context, just execute
+                return await func(*args, **kwargs)
+        
         return wrapper
     return decorator
 class CompanyIsolation:
@@ -360,3 +462,7 @@ class StudentDataIsolation:
 def require_student():
     """Dependency to require student role."""
     return RoleChecker([UserRole.STUDENT, UserRole.ADMIN])
+
+def require_student_strict():
+    """Dependency to require student role only (no admin bypass)."""
+    return RoleChecker([UserRole.STUDENT])
