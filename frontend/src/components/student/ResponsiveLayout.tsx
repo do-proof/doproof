@@ -51,7 +51,7 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Skip to main content link for keyboard navigation */}
-      <SkipLink />
+      <SkipLink href="#main-content">Skip to main content</SkipLink>
 
       {/* Navigation */}
       {showNavigation && <ResponsiveNavigation />}

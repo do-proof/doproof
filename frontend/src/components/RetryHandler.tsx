@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRetry } from '../hooks/useRetry';
 import { ButtonLoading } from './LoadingStates';
 import ErrorMessage from './ErrorMessage';
+import { ApiError } from '../utils/api';
 
 interface RetryHandlerProps<T extends any[], R> {
   asyncFn: (...args: T) => Promise<R>;
@@ -9,9 +10,9 @@ interface RetryHandlerProps<T extends any[], R> {
   maxAttempts?: number;
   delay?: number;
   onSuccess?: (result: R) => void;
-  onError?: (error: Error) => void;
+  onError?: (error: Error | ApiError) => void;
   renderSuccess?: (result: R) => React.ReactNode;
-  renderError?: (error: Error, retry: () => void) => React.ReactNode;
+  renderError?: (error: Error | ApiError, retry: () => void) => React.ReactNode;
   renderLoading?: () => React.ReactNode;
   autoExecute?: boolean;
   children?: (state: {
@@ -19,7 +20,7 @@ interface RetryHandlerProps<T extends any[], R> {
     retry: () => Promise<void>;
     isRetrying: boolean;
     attempt: number;
-    error: Error | null;
+    error: Error | ApiError | null;
     result: R | null;
   }) => React.ReactNode;
 }
@@ -41,7 +42,7 @@ function RetryHandler<T extends any[], R>({
   children
 }: RetryHandlerProps<T, R>) {
   const [result, setResult] = useState<R | null>(null);
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<Error | ApiError | null>(null);
 
   const { execute, retry, state } = useRetry(
     asyncFn,
@@ -52,9 +53,10 @@ function RetryHandler<T extends any[], R>({
         console.log(`Retry attempt ${attempt}:`, err);
       },
       onMaxAttemptsReached: (err) => {
-        setError(err as Error);
+        const errorObj = err as Error | ApiError;
+        setError(errorObj);
         if (onError) {
-          onError(err as Error);
+          onError(errorObj);
         }
       }
     }
@@ -69,9 +71,10 @@ function RetryHandler<T extends any[], R>({
         onSuccess(res);
       }
     } catch (err) {
-      setError(err as Error);
+      const errorObj = err as Error | ApiError;
+      setError(errorObj);
       if (onError) {
-        onError(err as Error);
+        onError(errorObj);
       }
     }
   };
@@ -85,9 +88,10 @@ function RetryHandler<T extends any[], R>({
         onSuccess(res);
       }
     } catch (err) {
-      setError(err as Error);
+      const errorObj = err as Error | ApiError;
+      setError(errorObj);
       if (onError) {
-        onError(err as Error);
+        onError(errorObj);
       }
     }
   };
@@ -137,10 +141,11 @@ function RetryHandler<T extends any[], R>({
     if (renderError) {
       return <>{renderError(displayError, handleRetry)}</>;
     }
+    const errorMessage = 'message' in displayError ? displayError.message : String(displayError);
     return (
       <ErrorMessage
         title="Operation Failed"
-        message={displayError.message}
+        message={errorMessage}
         onRetry={state.canRetry ? handleRetry : undefined}
         type="error"
       />

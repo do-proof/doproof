@@ -48,3 +48,13 @@ app.include_router(websocket.router)
 @app.get("/")
 async def root():
     return {"message": "Welcome to DoProof API"}
+
+@app.get("/api/health")
+@app.head("/api/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {
+        "status": "healthy",
+        "service": "DoProof API",
+        "version": "0.1.0"
+    }

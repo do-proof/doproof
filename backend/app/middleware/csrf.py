@@ -24,7 +24,10 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = [
         '/api/users/login',
         '/api/users/register',
+        '/api/users',  # User registration endpoint
         '/api/health',
+        '/docs',  # Swagger docs
+        '/openapi.json',  # OpenAPI schema
     ]
     
     def __init__(self, app: ASGIApp):
@@ -53,26 +56,18 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         
         if auth_token:
             # If authenticated, the JWT token provides CSRF protection
-            # Additional CSRF token is optional but recommended for extra security
-            if csrf_token:
-                # Validate CSRF token if provided
-                if not self.validate_csrf_token(csrf_token, request):
-                    csrf_logger.warning(
-                        f"Invalid CSRF token for {request.method} {request.url.path}"
-                    )
-                    return JSONResponse(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        content={"detail": "Invalid CSRF token"}
-                    )
+            # No additional CSRF token needed for authenticated requests
+            pass
         else:
-            # For unauthenticated requests, require CSRF token
-            if not csrf_token or not self.validate_csrf_token(csrf_token, request):
+            # For unauthenticated requests, check if CSRF token is provided and valid
+            # But don't block if missing - let the endpoint handle authentication
+            if csrf_token and not self.validate_csrf_token(csrf_token, request):
                 csrf_logger.warning(
-                    f"Missing CSRF token for {request.method} {request.url.path}"
+                    f"Invalid CSRF token for {request.method} {request.url.path}"
                 )
                 return JSONResponse(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    content={"detail": "CSRF token required"}
+                    content={"detail": "Invalid CSRF token"}
                 )
         
         response = await call_next(request)

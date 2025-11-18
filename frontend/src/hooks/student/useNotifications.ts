@@ -141,7 +141,7 @@ export const useMarkNotificationRead = () => {
         }
       );
     },
-    onError: handleError,
+    onError: (error) => handleError(error),
   });
 };
 
@@ -180,7 +180,7 @@ export const useMarkAllNotificationsRead = () => {
         }
       );
     },
-    onError: handleError,
+    onError: (error) => handleError(error),
   });
 };
 
@@ -219,7 +219,7 @@ export const useDeleteNotification = () => {
       // Invalidate stats
       queryClient.invalidateQueries({ queryKey: notificationKeys.stats() });
     },
-    onError: handleError,
+    onError: (error) => handleError(error),
   });
 };
 
@@ -260,7 +260,7 @@ export const useClearAllNotifications = () => {
         recent_count: 0
       });
     },
-    onError: handleError,
+    onError: (error) => handleError(error),
   });
 };
 
